@@ -1,5 +1,5 @@
 /**
- * eia-direct-domain.
+ * eia-primary-domain.
  */
-package com.eia.direct.domain;
+package com.eia.primary.domain;
 

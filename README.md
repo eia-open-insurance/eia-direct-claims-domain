@@ -1,17 +1,17 @@
-# eia-direct-domain
+# eia-primary-domain
 
 - GitHub organization: `eia-open-insurance`
-- Repository URL: https://github.com/eia-open-insurance/eia-direct-domain
+- Repository URL: https://github.com/eia-open-insurance/eia-primary-domain
 - Type: Spring Boot service
 - Deployable: Yes
-- Owner: Direct
+- Owner: Primary
 - Runtime: Java 22 and Spring Boot
-- Data store: eia_direct (tx schema)
-- Depends on: eia-direct-expert, eia-contracts, eia-open-insurance-libs
+- Data store: eia_primary (tx schema)
+- Depends on: eia-primary-expert, eia-contracts, eia-open-insurance-libs
 
 ## Purpose
 
-Direct business rules, transaction catalog, orchestration, approvals, and APIs. Direct claims: FNOL, coverage, injury, reserves, litigation, settlement, and recovery.
+Primary business rules, transaction catalog, orchestration, approvals, and APIs. Primary claims: FNOL, coverage, injury, reserves, litigation, settlement, and recovery.
 
 ## Responsibilities
 
