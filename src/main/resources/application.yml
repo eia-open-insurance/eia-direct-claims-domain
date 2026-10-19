@@ -1,0 +1,16 @@
+server:
+  port: 8088
+
+spring:
+  application:
+    name: eia-direct-claims-domain
+
+eia:
+  direct-claims:
+    expert-url: http://localhost:8087
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
