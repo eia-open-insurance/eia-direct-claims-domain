@@ -61,6 +61,18 @@ class ClaimControllerTest {
     }
 
     @Test
+    void reserveAmountIsSerializedAsDecimalString() throws Exception {
+        when(service.list(TENANT, null)).thenReturn(List.of(claim("REGISTERED", 0)));
+
+        mvc.perform(get(URL)
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", "DIRECT"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].reserveAmount").isString())
+                .andExpect(jsonPath("$[0].reserveAmount").value("125000.0000"));
+    }
+
+    @Test
     void assumedBookReturns404AndNeverReachesTheService() throws Exception {
         mvc.perform(get(URL)
                         .header("X-EIA-Tenant", TENANT)
