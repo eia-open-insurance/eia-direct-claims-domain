@@ -7,7 +7,7 @@
 - Owner: Direct Claims
 - Runtime: Java 22 and Spring Boot
 - Data store: eia_direct (tx schema)
-- Depends on: eia-direct-claims-expert, eia-contracts, eia-open-insurance-libs
+- Depends on: eia-direct-claims-expert, eia-contracts, eia-platform/libs
 
 ## Purpose
 
