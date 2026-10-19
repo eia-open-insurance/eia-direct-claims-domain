@@ -59,13 +59,14 @@ class ClaimServiceTest {
 
     @Test
     void delegatesValidCreateToTheExpert() {
+        CreateClaimCommand command = command(REPORT_DATE, new BigDecimal("125000.00"));
         ClaimDto created = dto("REGISTERED", 0);
-        when(client.create(TENANT, command(REPORT_DATE, new BigDecimal("125000.00")))).thenReturn(created);
+        when(client.create(TENANT, command)).thenReturn(created);
 
-        ClaimDto result = service.create(TENANT, command(REPORT_DATE, new BigDecimal("125000.00")));
+        ClaimDto result = service.create(TENANT, command);
 
         assertSame(created, result);
-        verify(client).create(TENANT, command(REPORT_DATE, new BigDecimal("125000.00")));
+        verify(client).create(TENANT, command);
     }
 
     @Test
@@ -121,9 +122,20 @@ class ClaimServiceTest {
         verify(client).findAll(TENANT, ClaimStatus.OPEN);
     }
 
+    @Test
+    void closeChecksTheClaimBeforeCallingTheExpert() {
+        when(client.findById(TENANT, CLAIM_ID)).thenReturn(dto("PAID", 5));
+        when(client.close(TENANT, CLAIM_ID, 5)).thenReturn(dto("CLOSED", 6));
+
+        ClaimDto closed = service.close(TENANT, CLAIM_ID, 5);
+
+        assertEquals("CLOSED", closed.status());
+        verify(client).close(TENANT, CLAIM_ID, 5);
+    }
+
     private static CreateClaimCommand command(LocalDate reportDate, BigDecimal reserve) {
         return new CreateClaimCommand(POLICY_ID, CLAIMANT_ID, LOSS_DATE, reportDate,
-                "GL", reserve, "USD");
+                "GL", null, reserve, "USD", null, null);
     }
 
     private static ClaimDto dto(String status, int version) {
@@ -134,12 +146,17 @@ class ClaimServiceTest {
                 "CLM-2026-0000001",
                 POLICY_ID,
                 CLAIMANT_ID,
+                "BODILY_INJURY",
                 status,
                 LOSS_DATE,
                 REPORT_DATE,
                 "GL",
                 new BigDecimal("125000.0000"),
                 "USD",
+                new BigDecimal("500000.0000"),
+                "USD",
+                false,
+                new BigDecimal("125000.0000"),
                 version,
                 Instant.parse("2026-03-18T09:00:00Z"),
                 Instant.parse("2026-03-18T09:00:00Z"));

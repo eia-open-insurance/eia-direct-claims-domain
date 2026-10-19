@@ -1,0 +1,287 @@
+package com.eia.directclaims.domain;
+
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
+
+/**
+ * Public API for the Direct Claims second slice. The domain performs the
+ * contract-level validation the caller can fix (required fields, positive
+ * money, dates) and forwards to the expert, which owns the invariants.
+ */
+@Service
+public class ClaimDetailService {
+    private static final Set<String> COVERAGE_POSITIONS = Set.of("COVERED", "DENIED", "DEFENSE_ONLY");
+    private static final Set<String> TERMINAL_LIEN_STATUSES = Set.of("RESOLVED", "WAIVED", "PAID");
+    private static final Set<String> LIEN_RESOLUTIONS = Set.of("PAID", "NEGOTIATED", "WAIVED", "DEFERRED");
+
+    private final ClaimClient client;
+
+    public ClaimDetailService(ClaimClient client) {
+        this.client = client;
+    }
+
+    // ------------------------------------------------------------------ injuries
+    public List<ClaimDetailDtos.Injury> injuries(UUID tenantId, UUID claimId) {
+        return client.findInjuries(tenantId, claimId);
+    }
+
+    public ClaimDetailDtos.Injury addInjury(UUID tenantId, UUID claimId, ClaimCommands.Injury command) {
+        requireId(command.claimantPartyId(), "claimantPartyId");
+        requireText(command.injuryType(), "injuryType");
+        requireText(command.severity(), "severity");
+        return client.addInjury(tenantId, claimId, command);
+    }
+
+    public ClaimDetailDtos.Injury updateInjury(UUID tenantId, UUID claimId, UUID injuryId,
+                                               ClaimCommands.Injury command) {
+        requireExpectedVersion(command.expectedVersion());
+        if (command.injuryType() != null) {
+            requireText(command.injuryType(), "injuryType");
+        }
+        if (command.severity() != null) {
+            requireText(command.severity(), "severity");
+        }
+        return client.updateInjury(tenantId, claimId, injuryId, command);
+    }
+
+    // ------------------------------------------------------------------ exposures
+    public List<ClaimDetailDtos.Exposure> exposures(UUID tenantId, UUID claimId) {
+        return client.findExposures(tenantId, claimId);
+    }
+
+    public ClaimDetailDtos.Exposure addExposure(UUID tenantId, UUID claimId,
+                                                ClaimCommands.Exposure command) {
+        requireId(command.claimantPartyId(), "claimantPartyId");
+        requireText(command.exposureType(), "exposureType");
+        requireText(command.jurisdiction(), "jurisdiction");
+        requireDate(command.exposureFrom(), "exposureFrom");
+        ClaimDto claim = client.findById(tenantId, claimId);
+        validateExposureDates(claim, command.exposureFrom(), command.exposureTo());
+        return client.addExposure(tenantId, claimId, command);
+    }
+
+    public ClaimDetailDtos.Exposure updateExposure(UUID tenantId, UUID claimId, UUID exposureId,
+                                                   ClaimCommands.Exposure command) {
+        requireExpectedVersion(command.expectedVersion());
+        if (command.exposureType() != null) {
+            requireText(command.exposureType(), "exposureType");
+        }
+        if (command.jurisdiction() != null) {
+            requireText(command.jurisdiction(), "jurisdiction");
+        }
+        if (command.exposureFrom() != null || command.exposureTo() != null) {
+            ClaimDto claim = client.findById(tenantId, claimId);
+            validateExposureDates(claim, command.exposureFrom(), command.exposureTo());
+        }
+        return client.updateExposure(tenantId, claimId, exposureId, command);
+    }
+
+    private static void validateExposureDates(ClaimDto claim, LocalDate from, LocalDate to) {
+        if (from != null && from.isAfter(claim.reportDate())) {
+            throw new DomainValidationException("exposureFrom cannot be after reportDate "
+                    + claim.reportDate());
+        }
+        if (to != null) {
+            if (from != null && to.isBefore(from)) {
+                throw new DomainValidationException("exposureTo cannot be before exposureFrom");
+            }
+            if (to.isAfter(claim.reportDate())) {
+                throw new DomainValidationException("exposureTo cannot be after reportDate "
+                        + claim.reportDate());
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ reserves
+    public ClaimDetailDtos.ReserveSummary reserves(UUID tenantId, UUID claimId) {
+        return client.findReserves(tenantId, claimId);
+    }
+
+    public ClaimDetailDtos.ReserveEntry changeReserve(UUID tenantId, UUID claimId,
+                                                      ClaimCommands.ReserveChange command) {
+        requireText(command.component(), "component");
+        nonNegative(command.amount(), "amount");
+        requireText(command.reasonCode(), "reasonCode");
+        requireExpectedVersion(command.expectedVersion());
+        return client.changeReserve(tenantId, claimId, command);
+    }
+
+    // ------------------------------------------------------------------ coverage
+    public ClaimDetailDtos.CoverageDecision coverage(UUID tenantId, UUID claimId) {
+        return client.findCoverage(tenantId, claimId);
+    }
+
+    public ClaimDetailDtos.CoverageDecision decideCoverage(UUID tenantId, UUID claimId,
+                                                           ClaimCommands.CoverageDecision command) {
+        String position = requireText(command.position(), "position");
+        if (!COVERAGE_POSITIONS.contains(position.toUpperCase(Locale.ROOT))) {
+            throw new DomainValidationException("Unknown position: " + command.position());
+        }
+        requireText(command.basis(), "basis");
+        requireId(command.reviewerPartyId(), "reviewerPartyId");
+        requireDate(command.decisionDate(), "decisionDate");
+        BigDecimal pct = command.allocationPct();
+        if (pct != null && (pct.signum() < 0 || pct.compareTo(BigDecimal.ONE) > 0)) {
+            throw new DomainValidationException("allocationPct must be between 0 and 1");
+        }
+        return client.decideCoverage(tenantId, claimId, command);
+    }
+
+    // ------------------------------------------------------------------ litigation
+    public List<ClaimDetailDtos.Litigation> litigation(UUID tenantId, UUID claimId) {
+        return client.findLitigation(tenantId, claimId);
+    }
+
+    public ClaimDetailDtos.Litigation addLitigation(UUID tenantId, UUID claimId,
+                                                    ClaimCommands.Litigation command) {
+        requireText(command.matterType(), "matterType");
+        requireText(command.jurisdiction(), "jurisdiction");
+        requireId(command.counselPartyId(), "counselPartyId");
+        requireDate(command.filingDate(), "filingDate");
+        requireText(command.status(), "status");
+        if (command.trialDate() != null && command.trialDate().isBefore(command.filingDate())) {
+            throw new DomainValidationException("trialDate cannot be before filingDate");
+        }
+        return client.addLitigation(tenantId, claimId, command);
+    }
+
+    public ClaimDetailDtos.Litigation updateLitigation(UUID tenantId, UUID claimId, UUID litigationId,
+                                                       ClaimCommands.Litigation command) {
+        requireExpectedVersion(command.expectedVersion());
+        return client.updateLitigation(tenantId, claimId, litigationId, command);
+    }
+
+    // ------------------------------------------------------------------ settlements
+    public List<ClaimDetailDtos.Settlement> settlements(UUID tenantId, UUID claimId) {
+        return client.findSettlements(tenantId, claimId);
+    }
+
+    public ClaimDetailDtos.Settlement proposeSettlement(UUID tenantId, UUID claimId,
+                                                        ClaimCommands.Settlement command) {
+        positive(command.amount(), "amount");
+        requireText(command.structure(), "structure");
+        return client.proposeSettlement(tenantId, claimId, command);
+    }
+
+    public ClaimDetailDtos.Settlement approveSettlement(UUID tenantId, UUID claimId, UUID settlementId,
+                                                        ClaimCommands.SettlementApproval command) {
+        requireText(command.approvalAuthority(), "approvalAuthority");
+        requireId(command.authorizedBy(), "authorizedBy");
+        requireExpectedVersion(command.expectedVersion());
+        return client.approveSettlement(tenantId, claimId, settlementId, command);
+    }
+
+    public ClaimDetailDtos.Settlement executeSettlement(UUID tenantId, UUID claimId, UUID settlementId,
+                                                        ClaimCommands.SettlementExecution command) {
+        requireId(command.releaseDocumentId(), "releaseDocumentId");
+        requireExpectedVersion(command.expectedVersion());
+        return client.executeSettlement(tenantId, claimId, settlementId, command);
+    }
+
+    // ------------------------------------------------------------------ recoveries
+    public List<ClaimDetailDtos.Recovery> recoveries(UUID tenantId, UUID claimId) {
+        return client.findRecoveries(tenantId, claimId);
+    }
+
+    public ClaimDetailDtos.Recovery recordRecovery(UUID tenantId, UUID claimId,
+                                                   ClaimCommands.Recovery command) {
+        requireText(command.recoveryType(), "recoveryType");
+        positive(command.amount(), "amount");
+        requireText(command.source(), "source");
+        String status = requireText(command.status(), "status");
+        if ("RECEIVED".equals(status.toUpperCase(Locale.ROOT))) {
+            requireDate(command.recoveryDate(), "recoveryDate");
+        }
+        return client.recordRecovery(tenantId, claimId, command);
+    }
+
+    public ClaimDetailDtos.Recovery updateRecovery(UUID tenantId, UUID claimId, UUID recoveryId,
+                                                   ClaimCommands.Recovery command) {
+        requireExpectedVersion(command.expectedVersion());
+        if (command.status() != null && "RECEIVED".equals(command.status().toUpperCase(Locale.ROOT))) {
+            requireDate(command.recoveryDate(), "recoveryDate");
+        }
+        return client.updateRecovery(tenantId, claimId, recoveryId, command);
+    }
+
+    // ------------------------------------------------------------------ liens
+    public List<ClaimDetailDtos.Lien> liens(UUID tenantId, UUID claimId) {
+        return client.findLiens(tenantId, claimId);
+    }
+
+    public ClaimDetailDtos.Lien recordLien(UUID tenantId, UUID claimId, ClaimCommands.Lien command) {
+        requireText(command.lienType(), "lienType");
+        requireText(command.lienholder(), "lienholder");
+        nonNegative(command.amount(), "amount");
+        String status = requireText(command.status(), "status").toUpperCase(Locale.ROOT);
+        if (TERMINAL_LIEN_STATUSES.contains(status)) {
+            String resolution = requireText(command.resolutionType(), "resolutionType");
+            if (!LIEN_RESOLUTIONS.contains(resolution.toUpperCase(Locale.ROOT))) {
+                throw new DomainValidationException("Unknown resolutionType: " + command.resolutionType());
+            }
+        }
+        return client.recordLien(tenantId, claimId, command);
+    }
+
+    public ClaimDetailDtos.Lien updateLien(UUID tenantId, UUID claimId, UUID lienId,
+                                           ClaimCommands.Lien command) {
+        requireExpectedVersion(command.expectedVersion());
+        if (command.status() != null && TERMINAL_LIEN_STATUSES.contains(
+                command.status().toUpperCase(Locale.ROOT))) {
+            requireText(command.resolutionType(), "resolutionType");
+        }
+        return client.updateLien(tenantId, claimId, lienId, command);
+    }
+
+    // ------------------------------------------------------------------ helpers
+    private static String requireText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new DomainValidationException(field + " is required");
+        }
+        return value.trim();
+    }
+
+    private static UUID requireId(UUID value, String field) {
+        if (value == null) {
+            throw new DomainValidationException(field + " is required");
+        }
+        return value;
+    }
+
+    private static LocalDate requireDate(LocalDate value, String field) {
+        if (value == null) {
+            throw new DomainValidationException(field + " is required");
+        }
+        return value;
+    }
+
+    private static void requireExpectedVersion(Integer expectedVersion) {
+        if (expectedVersion == null) {
+            throw new DomainValidationException("expectedVersion is required");
+        }
+    }
+
+    private static void nonNegative(BigDecimal value, String field) {
+        if (value == null) {
+            throw new DomainValidationException(field + " is required");
+        }
+        if (value.signum() < 0) {
+            throw new DomainValidationException(field + " must be zero or greater");
+        }
+    }
+
+    private static void positive(BigDecimal value, String field) {
+        if (value == null) {
+            throw new DomainValidationException(field + " is required");
+        }
+        if (value.signum() <= 0) {
+            throw new DomainValidationException(field + " must be greater than zero");
+        }
+    }
+}

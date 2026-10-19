@@ -41,15 +41,25 @@ book returns 404, never 403):
 - `GET /api/v1/claims/{id}`
 - `POST /api/v1/claims`
 - `PATCH /api/v1/claims/{id}/status`
+- `POST /api/v1/claims/{id}/close`
+- `GET|POST /api/v1/claims/{id}/injuries`, `PATCH /api/v1/claims/{id}/injuries/{injuryId}`
+- `GET|POST /api/v1/claims/{id}/exposures`, `PATCH /api/v1/claims/{id}/exposures/{exposureId}`
+- `GET|POST /api/v1/claims/{id}/reserves`
+- `GET|POST /api/v1/claims/{id}/coverage`
+- `GET|POST /api/v1/claims/{id}/litigation`, `PATCH .../litigation/{litigationId}`
+- `GET|POST /api/v1/claims/{id}/settlements`, `POST .../settlements/{settlementId}/approve`,
+  `POST .../settlements/{settlementId}/execute`
+- `GET|POST /api/v1/claims/{id}/recoveries`, `PATCH .../recoveries/{recoveryId}`
+- `GET|POST /api/v1/claims/{id}/liens`, `PATCH .../liens/{lienId}`
+
+`GET /{id}/coverage` returns 404 until a decision is recorded, so the workbench can show an
+empty tab. Money is a decimal string on every route.
 
 ## Verification
 
-- Lint and format
-- Unit tests with 100% business-logic coverage where applicable
-- Contract tests
-- Integration or Playwright tests where applicable
-- Security scan and SBOM
-- Build and publish
+- `.\gradlew build` - domain unit and controller tests.
+- The expert's `scripts/live-smoke-domain.ps1` exercises this API end to end against real
+  PostgreSQL with both services running.
 
 ## Notes
 

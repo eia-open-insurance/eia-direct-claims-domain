@@ -37,8 +37,10 @@ class ClaimControllerTest {
               "lossDate": "2026-03-14",
               "reportDate": "2026-03-18",
               "causeCode": "GL",
+              "claimType": "MASS_TORT",
               "reserveAmount": 125000.00,
-              "reserveCurrency": "USD"
+              "reserveCurrency": "USD",
+              "settlementAuthorityAmount": 500000.00
             }
             """;
 
@@ -57,7 +59,8 @@ class ClaimControllerTest {
                         .header("X-EIA-Book", "DIRECT"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].claimNumber").value("CLM-2026-0000001"))
-                .andExpect(jsonPath("$[0].businessBook").value("DIRECT"));
+                .andExpect(jsonPath("$[0].businessBook").value("DIRECT"))
+                .andExpect(jsonPath("$[0].claimType").value("MASS_TORT"));
     }
 
     @Test
@@ -69,7 +72,9 @@ class ClaimControllerTest {
                         .header("X-EIA-Book", "DIRECT"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].reserveAmount").isString())
-                .andExpect(jsonPath("$[0].reserveAmount").value("125000.0000"));
+                .andExpect(jsonPath("$[0].reserveAmount").value("125000.0000"))
+                .andExpect(jsonPath("$[0].currentReserveAmount").isString())
+                .andExpect(jsonPath("$[0].settlementAuthorityAmount").isString());
     }
 
     @Test
@@ -209,6 +214,31 @@ class ClaimControllerTest {
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
     }
 
+    @Test
+    void closesAClaimThroughTheTransactionRoute() throws Exception {
+        when(service.close(TENANT, CLAIM_ID, 5)).thenReturn(claim("CLOSED", 6));
+
+        mvc.perform(post(URL + "/" + CLAIM_ID + "/close")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", "DIRECT")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\": 5}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CLOSED"));
+    }
+
+    @Test
+    void closeOnAnotherBookReturns404() throws Exception {
+        mvc.perform(post(URL + "/" + CLAIM_ID + "/close")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", "ASSUMED")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isNotFound());
+
+        verifyNoInteractions(service);
+    }
+
     private static ClaimDto claim(String status, int version) {
         return new ClaimDto(
                 CLAIM_ID,
@@ -217,12 +247,17 @@ class ClaimControllerTest {
                 "CLM-2026-0000001",
                 POLICY_ID,
                 CLAIMANT_ID,
+                "MASS_TORT",
                 status,
                 LocalDate.of(2026, 3, 14),
                 LocalDate.of(2026, 3, 18),
                 "GL",
                 new BigDecimal("125000.0000"),
                 "USD",
+                new BigDecimal("500000.0000"),
+                "USD",
+                false,
+                new BigDecimal("125000.0000"),
                 version,
                 Instant.parse("2026-03-18T09:00:00Z"),
                 Instant.parse("2026-03-18T09:00:00Z"));

@@ -49,6 +49,15 @@ public class ClaimService {
         return client.changeStatus(tenantId, id, next, current.version());
     }
 
+    /**
+     * Closure is a transaction in SPEC §11.4.10. The expert enforces the
+     * closure criteria (unresolved lien, open reserve, legal transition).
+     */
+    public ClaimDto close(UUID tenantId, UUID id, Integer expectedVersion) {
+        get(tenantId, id);
+        return client.close(tenantId, id, expectedVersion);
+    }
+
     private static void validate(CreateClaimCommand command) {
         if (command.lossDate() == null || command.reportDate() == null) {
             throw new DomainValidationException("lossDate and reportDate are required");

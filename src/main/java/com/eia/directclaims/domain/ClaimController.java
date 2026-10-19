@@ -58,4 +58,14 @@ public class ClaimController {
         RequestGuard.requireDirectBook(book);
         return service.changeStatus(RequestGuard.requireTenant(tenantHeader), id, command);
     }
+
+    @PostMapping("/{id}/close")
+    public ClaimDto close(@RequestHeader(value = "X-EIA-Tenant", required = false) String tenantHeader,
+                          @RequestHeader(value = "X-EIA-Book", required = false) String book,
+                          @PathVariable UUID id,
+                          @RequestBody(required = false) CloseClaimCommand command) {
+        RequestGuard.requireDirectBook(book);
+        return service.close(RequestGuard.requireTenant(tenantHeader), id,
+                command == null ? null : command.expectedVersion());
+    }
 }

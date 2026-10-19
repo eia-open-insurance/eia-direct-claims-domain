@@ -48,7 +48,8 @@ public class ClaimClient {
                 .uri("/internal/v1/claims")
                 .body(new CreateClaimRequest(tenantId, command.policyId(), command.claimantPartyId(),
                         command.lossDate(), command.reportDate(), command.causeCode(),
-                        command.reserveAmount(), command.reserveCurrency()))
+                        command.claimType(), command.reserveAmount(), command.reserveCurrency(),
+                        command.settlementAuthorityAmount(), command.settlementAuthorityCurrency()))
                 .retrieve()
                 .body(ClaimDto.class);
     }
@@ -62,6 +63,256 @@ public class ClaimClient {
                 .body(ClaimDto.class);
     }
 
+    public ClaimDto close(UUID tenantId, UUID id, Integer expectedVersion) {
+        return client.post()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/close").build(id))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(new CloseClaimRequest(expectedVersion))
+                .retrieve()
+                .body(ClaimDto.class);
+    }
+
+    // ------------------------------------------------------------------ injuries
+    public List<ClaimDetailDtos.Injury> findInjuries(UUID tenantId, UUID claimId) {
+        return client.get()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/injuries")
+                        .queryParam("tenantId", tenantId)
+                        .build(claimId))
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {
+                });
+    }
+
+    public ClaimDetailDtos.Injury addInjury(UUID tenantId, UUID claimId, ClaimCommands.Injury command) {
+        return client.post()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/injuries").build(claimId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.Injury.class);
+    }
+
+    public ClaimDetailDtos.Injury updateInjury(UUID tenantId, UUID claimId, UUID injuryId,
+                                               ClaimCommands.Injury command) {
+        return client.patch()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/injuries/{injuryId}")
+                        .build(claimId, injuryId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.Injury.class);
+    }
+
+    // ------------------------------------------------------------------ exposures
+    public List<ClaimDetailDtos.Exposure> findExposures(UUID tenantId, UUID claimId) {
+        return client.get()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/exposures")
+                        .queryParam("tenantId", tenantId)
+                        .build(claimId))
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {
+                });
+    }
+
+    public ClaimDetailDtos.Exposure addExposure(UUID tenantId, UUID claimId,
+                                                ClaimCommands.Exposure command) {
+        return client.post()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/exposures").build(claimId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.Exposure.class);
+    }
+
+    public ClaimDetailDtos.Exposure updateExposure(UUID tenantId, UUID claimId, UUID exposureId,
+                                                   ClaimCommands.Exposure command) {
+        return client.patch()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/exposures/{exposureId}")
+                        .build(claimId, exposureId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.Exposure.class);
+    }
+
+    // ------------------------------------------------------------------ reserves
+    public ClaimDetailDtos.ReserveSummary findReserves(UUID tenantId, UUID claimId) {
+        return client.get()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/reserves")
+                        .queryParam("tenantId", tenantId)
+                        .build(claimId))
+                .retrieve()
+                .body(ClaimDetailDtos.ReserveSummary.class);
+    }
+
+    public ClaimDetailDtos.ReserveEntry changeReserve(UUID tenantId, UUID claimId,
+                                                      ClaimCommands.ReserveChange command) {
+        return client.post()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/reserves").build(claimId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.ReserveEntry.class);
+    }
+
+    // ------------------------------------------------------------------ coverage
+    public ClaimDetailDtos.CoverageDecision findCoverage(UUID tenantId, UUID claimId) {
+        return client.get()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/coverage")
+                        .queryParam("tenantId", tenantId)
+                        .build(claimId))
+                .retrieve()
+                .body(ClaimDetailDtos.CoverageDecision.class);
+    }
+
+    public ClaimDetailDtos.CoverageDecision decideCoverage(UUID tenantId, UUID claimId,
+                                                           ClaimCommands.CoverageDecision command) {
+        return client.post()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/coverage").build(claimId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.CoverageDecision.class);
+    }
+
+    // ------------------------------------------------------------------ litigation
+    public List<ClaimDetailDtos.Litigation> findLitigation(UUID tenantId, UUID claimId) {
+        return client.get()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/litigation")
+                        .queryParam("tenantId", tenantId)
+                        .build(claimId))
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {
+                });
+    }
+
+    public ClaimDetailDtos.Litigation addLitigation(UUID tenantId, UUID claimId,
+                                                    ClaimCommands.Litigation command) {
+        return client.post()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/litigation").build(claimId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.Litigation.class);
+    }
+
+    public ClaimDetailDtos.Litigation updateLitigation(UUID tenantId, UUID claimId, UUID litigationId,
+                                                       ClaimCommands.Litigation command) {
+        return client.patch()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/litigation/{litigationId}")
+                        .build(claimId, litigationId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.Litigation.class);
+    }
+
+    // ------------------------------------------------------------------ settlements
+    public List<ClaimDetailDtos.Settlement> findSettlements(UUID tenantId, UUID claimId) {
+        return client.get()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/settlements")
+                        .queryParam("tenantId", tenantId)
+                        .build(claimId))
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {
+                });
+    }
+
+    public ClaimDetailDtos.Settlement proposeSettlement(UUID tenantId, UUID claimId,
+                                                        ClaimCommands.Settlement command) {
+        return client.post()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/settlements").build(claimId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.Settlement.class);
+    }
+
+    public ClaimDetailDtos.Settlement approveSettlement(UUID tenantId, UUID claimId, UUID settlementId,
+                                                        ClaimCommands.SettlementApproval command) {
+        return client.post()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/settlements/{settlementId}/approve")
+                        .build(claimId, settlementId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.Settlement.class);
+    }
+
+    public ClaimDetailDtos.Settlement executeSettlement(UUID tenantId, UUID claimId, UUID settlementId,
+                                                        ClaimCommands.SettlementExecution command) {
+        return client.post()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/settlements/{settlementId}/execute")
+                        .build(claimId, settlementId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.Settlement.class);
+    }
+
+    // ------------------------------------------------------------------ recoveries
+    public List<ClaimDetailDtos.Recovery> findRecoveries(UUID tenantId, UUID claimId) {
+        return client.get()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/recoveries")
+                        .queryParam("tenantId", tenantId)
+                        .build(claimId))
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {
+                });
+    }
+
+    public ClaimDetailDtos.Recovery recordRecovery(UUID tenantId, UUID claimId,
+                                                   ClaimCommands.Recovery command) {
+        return client.post()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/recoveries").build(claimId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.Recovery.class);
+    }
+
+    public ClaimDetailDtos.Recovery updateRecovery(UUID tenantId, UUID claimId, UUID recoveryId,
+                                                   ClaimCommands.Recovery command) {
+        return client.patch()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/recoveries/{recoveryId}")
+                        .build(claimId, recoveryId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.Recovery.class);
+    }
+
+    // ------------------------------------------------------------------ liens
+    public List<ClaimDetailDtos.Lien> findLiens(UUID tenantId, UUID claimId) {
+        return client.get()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/liens")
+                        .queryParam("tenantId", tenantId)
+                        .build(claimId))
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {
+                });
+    }
+
+    public ClaimDetailDtos.Lien recordLien(UUID tenantId, UUID claimId, ClaimCommands.Lien command) {
+        return client.post()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/liens").build(claimId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.Lien.class);
+    }
+
+    public ClaimDetailDtos.Lien updateLien(UUID tenantId, UUID claimId, UUID lienId,
+                                           ClaimCommands.Lien command) {
+        return client.patch()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/liens/{lienId}")
+                        .build(claimId, lienId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.Lien.class);
+    }
+
     record CreateClaimRequest(
             UUID tenantId,
             UUID policyId,
@@ -69,11 +320,17 @@ public class ClaimClient {
             java.time.LocalDate lossDate,
             java.time.LocalDate reportDate,
             String causeCode,
+            String claimType,
             java.math.BigDecimal reserveAmount,
-            String reserveCurrency
+            String reserveCurrency,
+            java.math.BigDecimal settlementAuthorityAmount,
+            String settlementAuthorityCurrency
     ) {
     }
 
     record StatusChangeRequest(String status, Integer expectedVersion) {
+    }
+
+    record CloseClaimRequest(Integer expectedVersion) {
     }
 }
