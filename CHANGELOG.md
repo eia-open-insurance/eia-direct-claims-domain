@@ -21,3 +21,8 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 - Common search at `GET /api/v1/claims/search?q={term}&limit=10`: tenant- and DIRECT-book-scoped
   matching over `claimNumber`, `claimType`, `causeCode`, and `policyId`, latest-by-`updatedAt`
   results for a blank query, and a limit capped at 25.
+- Claim tasks and notes: `GET|POST /api/v1/claims/{id}/tasks` with
+  `PATCH .../tasks/{taskId}` for version-checked status changes, and
+  `GET|POST /api/v1/claims/{id}/notes` for append-only notes. The domain forwards
+  `X-EIA-Tenant` and the DIRECT book, validates contract-level fields, and preserves expert
+  problem+json 400/404/409 responses, including the expert detail message.

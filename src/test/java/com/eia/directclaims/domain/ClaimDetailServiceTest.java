@@ -305,6 +305,109 @@ class ClaimDetailServiceTest {
         verify(client).findInjuries(TENANT, CLAIM_ID);
     }
 
+    @Test
+    void taskRequiresTitleDueDateAndPriority() {
+        assertThrows(DomainValidationException.class, () -> service.addTask(TENANT, CLAIM_ID,
+                new ClaimCommands.Task(" ", null, LocalDate.of(2026, 4, 1), "HIGH", null)));
+        assertThrows(DomainValidationException.class, () -> service.addTask(TENANT, CLAIM_ID,
+                new ClaimCommands.Task("Title", null, null, "HIGH", null)));
+        assertThrows(DomainValidationException.class, () -> service.addTask(TENANT, CLAIM_ID,
+                new ClaimCommands.Task("Title", null, LocalDate.of(2026, 4, 1), " ", null)));
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void taskRejectsAnUnknownPriority() {
+        DomainValidationException error = assertThrows(DomainValidationException.class,
+                () -> service.addTask(TENANT, CLAIM_ID,
+                        new ClaimCommands.Task("Title", null, LocalDate.of(2026, 4, 1),
+                                "CATASTROPHE", null)));
+
+        assertTrue(error.getMessage().contains("priority"));
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void taskDelegatesAValidCreate() {
+        ClaimCommands.Task command = new ClaimCommands.Task("Obtain records", "Provider records",
+                LocalDate.of(2026, 4, 1), "high", "A. Adjuster");
+        ClaimDetailDtos.Task created = DomainFixtures.task("OPEN");
+        when(client.addTask(TENANT, CLAIM_ID, command)).thenReturn(created);
+
+        assertEquals(created, service.addTask(TENANT, CLAIM_ID, command));
+    }
+
+    @Test
+    void taskStatusRequiresStatusAndVersion() {
+        assertThrows(DomainValidationException.class, () -> service.changeTaskStatus(TENANT, CLAIM_ID,
+                DomainFixtures.TASK_ID, new ClaimCommands.TaskStatusChange(null, 1L)));
+        assertThrows(DomainValidationException.class, () -> service.changeTaskStatus(TENANT, CLAIM_ID,
+                DomainFixtures.TASK_ID, new ClaimCommands.TaskStatusChange("COMPLETE", null)));
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void taskStatusRejectsAnUnknownStatus() {
+        DomainValidationException error = assertThrows(DomainValidationException.class,
+                () -> service.changeTaskStatus(TENANT, CLAIM_ID, DomainFixtures.TASK_ID,
+                        new ClaimCommands.TaskStatusChange("DONE", 1L)));
+
+        assertTrue(error.getMessage().contains("status"));
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void taskStatusDelegatesWithTheObservedVersion() {
+        ClaimCommands.TaskStatusChange command = new ClaimCommands.TaskStatusChange("COMPLETE", 3L);
+        ClaimDetailDtos.Task completed = DomainFixtures.task("COMPLETE");
+        when(client.changeTaskStatus(TENANT, CLAIM_ID, DomainFixtures.TASK_ID, command))
+                .thenReturn(completed);
+
+        assertEquals(completed, service.changeTaskStatus(TENANT, CLAIM_ID,
+                DomainFixtures.TASK_ID, command));
+    }
+
+    @Test
+    void noteRequiresTypeBodyAndAuthor() {
+        assertThrows(DomainValidationException.class, () -> service.addNote(TENANT, CLAIM_ID,
+                new ClaimCommands.Note(null, "Body", "Author")));
+        assertThrows(DomainValidationException.class, () -> service.addNote(TENANT, CLAIM_ID,
+                new ClaimCommands.Note("DIARY", " ", "Author")));
+        assertThrows(DomainValidationException.class, () -> service.addNote(TENANT, CLAIM_ID,
+                new ClaimCommands.Note("DIARY", "Body", " ")));
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void noteRejectsAnUnknownNoteType() {
+        DomainValidationException error = assertThrows(DomainValidationException.class,
+                () -> service.addNote(TENANT, CLAIM_ID,
+                        new ClaimCommands.Note("RANDOM", "Body", "Author")));
+
+        assertTrue(error.getMessage().contains("noteType"));
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void noteDelegatesAValidAppend() {
+        ClaimCommands.Note command = new ClaimCommands.Note("DIARY", "Called the claimant", "Dana");
+        ClaimDetailDtos.Note created = DomainFixtures.note();
+        when(client.addNote(TENANT, CLAIM_ID, command)).thenReturn(created);
+
+        assertEquals(created, service.addNote(TENANT, CLAIM_ID, command));
+    }
+
+    @Test
+    void taskAndNoteListsDelegateToTheExpert() {
+        when(client.findTasks(TENANT, CLAIM_ID)).thenReturn(List.of(DomainFixtures.task("OPEN")));
+        when(client.findNotes(TENANT, CLAIM_ID)).thenReturn(List.of(DomainFixtures.note()));
+
+        assertEquals(1, service.tasks(TENANT, CLAIM_ID).size());
+        assertEquals(1, service.notes(TENANT, CLAIM_ID).size());
+        verify(client).findTasks(TENANT, CLAIM_ID);
+        verify(client).findNotes(TENANT, CLAIM_ID);
+    }
+
     private static ClaimCommands.Injury injury(UUID claimant) {
         return injury(claimant, "MESOTHELIOMA", "SEVERE");
     }

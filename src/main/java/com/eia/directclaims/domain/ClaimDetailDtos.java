@@ -177,4 +177,39 @@ public final class ClaimDetailDtos {
             Instant updatedAt
     ) {
     }
+
+    /**
+     * A diary task on a claim. The public projection deliberately omits the
+     * expert's {@code tenantId}; the tenant is implied by the request context.
+     */
+    public record Task(
+            UUID id,
+            UUID claimId,
+            String taskNumber,
+            String title,
+            String description,
+            LocalDate dueDate,
+            String priority,
+            String status,
+            String assignedTo,
+            long version,
+            Instant createdAt,
+            Instant updatedAt,
+            Instant completedAt
+    ) {
+    }
+
+    /**
+     * An append-only claim note. Notes have no version and no update route.
+     */
+    public record Note(
+            UUID id,
+            UUID claimId,
+            String noteNumber,
+            String noteType,
+            String body,
+            String author,
+            Instant createdAt
+    ) {
+    }
 }

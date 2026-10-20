@@ -275,4 +275,58 @@ public class ClaimDetailController {
         RequestGuard.requireDirectBook(book);
         return service.updateLien(RequestGuard.requireTenant(tenantHeader), claimId, lienId, command);
     }
+
+    // ------------------------------------------------------------------ tasks
+    @GetMapping("/tasks")
+    public List<ClaimDetailDtos.Task> tasks(
+            @RequestHeader(value = "X-EIA-Tenant", required = false) String tenantHeader,
+            @RequestHeader(value = "X-EIA-Book", required = false) String book,
+            @PathVariable UUID claimId) {
+        RequestGuard.requireDirectBook(book);
+        return service.tasks(RequestGuard.requireTenant(tenantHeader), claimId);
+    }
+
+    @PostMapping("/tasks")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ClaimDetailDtos.Task addTask(
+            @RequestHeader(value = "X-EIA-Tenant", required = false) String tenantHeader,
+            @RequestHeader(value = "X-EIA-Book", required = false) String book,
+            @PathVariable UUID claimId,
+            @Valid @RequestBody ClaimCommands.Task command) {
+        RequestGuard.requireDirectBook(book);
+        return service.addTask(RequestGuard.requireTenant(tenantHeader), claimId, command);
+    }
+
+    @PatchMapping("/tasks/{taskId}")
+    public ClaimDetailDtos.Task changeTaskStatus(
+            @RequestHeader(value = "X-EIA-Tenant", required = false) String tenantHeader,
+            @RequestHeader(value = "X-EIA-Book", required = false) String book,
+            @PathVariable UUID claimId,
+            @PathVariable UUID taskId,
+            @Valid @RequestBody ClaimCommands.TaskStatusChange command) {
+        RequestGuard.requireDirectBook(book);
+        return service.changeTaskStatus(RequestGuard.requireTenant(tenantHeader), claimId, taskId,
+                command);
+    }
+
+    // ------------------------------------------------------------------ notes
+    @GetMapping("/notes")
+    public List<ClaimDetailDtos.Note> notes(
+            @RequestHeader(value = "X-EIA-Tenant", required = false) String tenantHeader,
+            @RequestHeader(value = "X-EIA-Book", required = false) String book,
+            @PathVariable UUID claimId) {
+        RequestGuard.requireDirectBook(book);
+        return service.notes(RequestGuard.requireTenant(tenantHeader), claimId);
+    }
+
+    @PostMapping("/notes")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ClaimDetailDtos.Note addNote(
+            @RequestHeader(value = "X-EIA-Tenant", required = false) String tenantHeader,
+            @RequestHeader(value = "X-EIA-Book", required = false) String book,
+            @PathVariable UUID claimId,
+            @Valid @RequestBody ClaimCommands.Note command) {
+        RequestGuard.requireDirectBook(book);
+        return service.addNote(RequestGuard.requireTenant(tenantHeader), claimId, command);
+    }
 }

@@ -52,9 +52,13 @@ book returns 404, never 403):
   `POST .../settlements/{settlementId}/execute`
 - `GET|POST /api/v1/claims/{id}/recoveries`, `PATCH .../recoveries/{recoveryId}`
 - `GET|POST /api/v1/claims/{id}/liens`, `PATCH .../liens/{lienId}`
+- `GET|POST /api/v1/claims/{id}/tasks`, `PATCH .../tasks/{taskId}`
+- `GET|POST /api/v1/claims/{id}/notes`
 
 `GET /{id}/coverage` returns 404 until a decision is recorded, so the workbench can show an
-empty tab. Money is a decimal string on every route.
+empty tab. Money is a decimal string on every route. Task writes carry the task `version`
+observed by the caller and return 409 when it is stale; notes are append-only. Expert
+problems keep their 400/404/409 status and detail, rendered as `application/problem+json`.
 
 `GET /api/v1/claims/search` matches `claimNumber`, `claimType`, `causeCode`, and `policyId`
 case-insensitively for the caller's tenant and the DIRECT book. A blank `q` returns the latest

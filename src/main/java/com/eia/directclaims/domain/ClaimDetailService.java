@@ -19,6 +19,10 @@ public class ClaimDetailService {
     private static final Set<String> COVERAGE_POSITIONS = Set.of("COVERED", "DENIED", "DEFENSE_ONLY");
     private static final Set<String> TERMINAL_LIEN_STATUSES = Set.of("RESOLVED", "WAIVED", "PAID");
     private static final Set<String> LIEN_RESOLUTIONS = Set.of("PAID", "NEGOTIATED", "WAIVED", "DEFERRED");
+    private static final Set<String> TASK_PRIORITIES = Set.of("LOW", "NORMAL", "HIGH", "URGENT");
+    private static final Set<String> TASK_STATUSES = Set.of("OPEN", "COMPLETE", "CANCELLED");
+    private static final Set<String> NOTE_TYPES = Set.of(
+            "DIARY", "COVERAGE", "RESERVE", "LITIGATION", "SETTLEMENT", "GENERAL");
 
     private final ClaimClient client;
 
@@ -237,6 +241,48 @@ public class ClaimDetailService {
             requireText(command.resolutionType(), "resolutionType");
         }
         return client.updateLien(tenantId, claimId, lienId, command);
+    }
+
+    // ------------------------------------------------------------------ tasks
+    public List<ClaimDetailDtos.Task> tasks(UUID tenantId, UUID claimId) {
+        return client.findTasks(tenantId, claimId);
+    }
+
+    public ClaimDetailDtos.Task addTask(UUID tenantId, UUID claimId, ClaimCommands.Task command) {
+        requireText(command.title(), "title");
+        requireDate(command.dueDate(), "dueDate");
+        String priority = requireText(command.priority(), "priority");
+        if (!TASK_PRIORITIES.contains(priority.toUpperCase(Locale.ROOT))) {
+            throw new DomainValidationException("Unknown priority: " + command.priority());
+        }
+        return client.addTask(tenantId, claimId, command);
+    }
+
+    public ClaimDetailDtos.Task changeTaskStatus(UUID tenantId, UUID claimId, UUID taskId,
+                                                 ClaimCommands.TaskStatusChange command) {
+        String status = requireText(command.status(), "status");
+        if (!TASK_STATUSES.contains(status.toUpperCase(Locale.ROOT))) {
+            throw new DomainValidationException("Unknown task status: " + command.status());
+        }
+        if (command.version() == null) {
+            throw new DomainValidationException("version is required");
+        }
+        return client.changeTaskStatus(tenantId, claimId, taskId, command);
+    }
+
+    // ------------------------------------------------------------------ notes
+    public List<ClaimDetailDtos.Note> notes(UUID tenantId, UUID claimId) {
+        return client.findNotes(tenantId, claimId);
+    }
+
+    public ClaimDetailDtos.Note addNote(UUID tenantId, UUID claimId, ClaimCommands.Note command) {
+        String noteType = requireText(command.noteType(), "noteType");
+        if (!NOTE_TYPES.contains(noteType.toUpperCase(Locale.ROOT))) {
+            throw new DomainValidationException("Unknown noteType: " + command.noteType());
+        }
+        requireText(command.body(), "body");
+        requireText(command.author(), "author");
+        return client.addNote(tenantId, claimId, command);
     }
 
     // ------------------------------------------------------------------ helpers

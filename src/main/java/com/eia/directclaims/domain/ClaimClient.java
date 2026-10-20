@@ -313,6 +313,55 @@ public class ClaimClient {
                 .body(ClaimDetailDtos.Lien.class);
     }
 
+    // ------------------------------------------------------------------ tasks
+    public List<ClaimDetailDtos.Task> findTasks(UUID tenantId, UUID claimId) {
+        return client.get()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/tasks").build(claimId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {
+                });
+    }
+
+    public ClaimDetailDtos.Task addTask(UUID tenantId, UUID claimId, ClaimCommands.Task command) {
+        return client.post()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/tasks").build(claimId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.Task.class);
+    }
+
+    public ClaimDetailDtos.Task changeTaskStatus(UUID tenantId, UUID claimId, UUID taskId,
+                                                 ClaimCommands.TaskStatusChange command) {
+        return client.patch()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/tasks/{taskId}")
+                        .build(claimId, taskId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.Task.class);
+    }
+
+    // ------------------------------------------------------------------ notes
+    public List<ClaimDetailDtos.Note> findNotes(UUID tenantId, UUID claimId) {
+        return client.get()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/notes").build(claimId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .retrieve()
+                .body(new ParameterizedTypeReference<>() {
+                });
+    }
+
+    public ClaimDetailDtos.Note addNote(UUID tenantId, UUID claimId, ClaimCommands.Note command) {
+        return client.post()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/notes").build(claimId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.Note.class);
+    }
+
     record CreateClaimRequest(
             UUID tenantId,
             UUID policyId,

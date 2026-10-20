@@ -21,6 +21,8 @@ final class DomainFixtures {
     static final UUID SETTLEMENT_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d36");
     static final UUID RECOVERY_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d37");
     static final UUID LIEN_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d38");
+    static final UUID TASK_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d39");
+    static final UUID NOTE_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d3a");
     static final Instant NOW = Instant.parse("2026-03-18T09:00:00Z");
 
     private DomainFixtures() {
@@ -78,5 +80,17 @@ final class DomainFixtures {
     static ClaimDetailDtos.Lien lien(String status) {
         return new ClaimDetailDtos.Lien(LIEN_ID, TENANT, CLAIM_ID, "MEDICARE", "CMS",
                 new BigDecimal("15000.0000"), "USD", status, null, null, 1, NOW, NOW);
+    }
+
+    static ClaimDetailDtos.Task task(String status) {
+        return new ClaimDetailDtos.Task(TASK_ID, CLAIM_ID, "TSK-2026-0000001",
+                "Obtain updated medical records", "Provider records requested at FNOL",
+                LocalDate.of(2026, 4, 1), "HIGH", status, "A. Adjuster", 1, NOW, NOW,
+                "COMPLETE".equals(status) ? NOW : null);
+    }
+
+    static ClaimDetailDtos.Note note() {
+        return new ClaimDetailDtos.Note(NOTE_ID, CLAIM_ID, "NTE-2026-0000001", "DIARY",
+                "Called the claimant to confirm the medical authorization", "Dana Handler", NOW);
     }
 }

@@ -121,6 +121,31 @@ public final class ClaimCommands {
     ) {
     }
 
+    /** Command to open a diary task; the expert assigns the task number and OPEN status. */
+    public record Task(
+            String title,
+            String description,
+            LocalDate dueDate,
+            String priority,
+            String assignedTo
+    ) {
+    }
+
+    /** Command to move a task to OPEN, COMPLETE, or CANCELLED at the observed version. */
+    public record TaskStatusChange(
+            String status,
+            Long version
+    ) {
+    }
+
+    /** Command to append an immutable claim note. */
+    public record Note(
+            String noteType,
+            String body,
+            String author
+    ) {
+    }
+
     public record CloseClaim(Integer expectedVersion) {
     }
 }

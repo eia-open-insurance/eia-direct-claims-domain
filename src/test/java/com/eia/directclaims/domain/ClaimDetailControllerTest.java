@@ -3,11 +3,15 @@ package com.eia.directclaims.domain;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static com.eia.directclaims.domain.DomainFixtures.CLAIM_ID;
@@ -16,17 +20,21 @@ import static com.eia.directclaims.domain.DomainFixtures.EXPOSURE_ID;
 import static com.eia.directclaims.domain.DomainFixtures.INJURY_ID;
 import static com.eia.directclaims.domain.DomainFixtures.LIEN_ID;
 import static com.eia.directclaims.domain.DomainFixtures.LITIGATION_ID;
+import static com.eia.directclaims.domain.DomainFixtures.NOTE_ID;
 import static com.eia.directclaims.domain.DomainFixtures.RECOVERY_ID;
 import static com.eia.directclaims.domain.DomainFixtures.SETTLEMENT_ID;
+import static com.eia.directclaims.domain.DomainFixtures.TASK_ID;
 import static com.eia.directclaims.domain.DomainFixtures.TENANT;
 import static com.eia.directclaims.domain.DomainFixtures.coverage;
 import static com.eia.directclaims.domain.DomainFixtures.exposure;
 import static com.eia.directclaims.domain.DomainFixtures.injury;
 import static com.eia.directclaims.domain.DomainFixtures.lien;
 import static com.eia.directclaims.domain.DomainFixtures.litigation;
+import static com.eia.directclaims.domain.DomainFixtures.note;
 import static com.eia.directclaims.domain.DomainFixtures.recovery;
 import static com.eia.directclaims.domain.DomainFixtures.reserve;
 import static com.eia.directclaims.domain.DomainFixtures.settlement;
+import static com.eia.directclaims.domain.DomainFixtures.task;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -34,6 +42,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -457,5 +466,189 @@ class ClaimDetailControllerTest {
                         .content("{\"status\": \"RESOLVED\", \"resolutionType\": \"NEGOTIATED\", \"expectedVersion\": 1}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("RESOLVED"));
+    }
+
+    // ------------------------------------------------------------------ tasks
+    @Test
+    void listsTasksWithTheExactPublicProjection() throws Exception {
+        when(service.tasks(TENANT, CLAIM_ID)).thenReturn(List.of(task("OPEN")));
+
+        mvc.perform(get(BASE + "/tasks")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(TASK_ID.toString()))
+                .andExpect(jsonPath("$[0].claimId").value(CLAIM_ID.toString()))
+                .andExpect(jsonPath("$[0].taskNumber").value("TSK-2026-0000001"))
+                .andExpect(jsonPath("$[0].title").value("Obtain updated medical records"))
+                .andExpect(jsonPath("$[0].description").value("Provider records requested at FNOL"))
+                .andExpect(jsonPath("$[0].dueDate").value("2026-04-01"))
+                .andExpect(jsonPath("$[0].priority").value("HIGH"))
+                .andExpect(jsonPath("$[0].status").value("OPEN"))
+                .andExpect(jsonPath("$[0].assignedTo").value("A. Adjuster"))
+                .andExpect(jsonPath("$[0].version").value(1))
+                .andExpect(jsonPath("$[0].createdAt").value("2026-03-18T09:00:00Z"))
+                .andExpect(jsonPath("$[0].updatedAt").value("2026-03-18T09:00:00Z"))
+                .andExpect(jsonPath("$[0].completedAt").isEmpty())
+                .andExpect(jsonPath("$[0].tenantId").doesNotExist());
+    }
+
+    @Test
+    void opensATask() throws Exception {
+        when(service.addTask(eq(TENANT), eq(CLAIM_ID), any(ClaimCommands.Task.class)))
+                .thenReturn(task("OPEN"));
+
+        mvc.perform(post(BASE + "/tasks")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Obtain updated medical records",
+                                  "description": "Provider records requested at FNOL",
+                                  "dueDate": "2026-04-01",
+                                  "priority": "HIGH",
+                                  "assignedTo": "A. Adjuster"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(TASK_ID.toString()))
+                .andExpect(jsonPath("$.status").value("OPEN"));
+    }
+
+    @Test
+    void changesATaskStatusWithTheObservedVersion() throws Exception {
+        when(service.changeTaskStatus(eq(TENANT), eq(CLAIM_ID), eq(TASK_ID),
+                any(ClaimCommands.TaskStatusChange.class))).thenReturn(task("COMPLETE"));
+
+        mvc.perform(patch(BASE + "/tasks/" + TASK_ID)
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\": \"COMPLETE\", \"version\": 1}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETE"))
+                .andExpect(jsonPath("$.completedAt").value("2026-03-18T09:00:00Z"));
+    }
+
+    @Test
+    void taskRoutesKeepTheDirectBookWall() throws Exception {
+        mvc.perform(get(BASE + "/tasks")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", "ASSUMED"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+        verifyNoInteractions(service);
+    }
+
+    // ------------------------------------------------------------------ notes
+    @Test
+    void listsNotesWithTheExactPublicProjection() throws Exception {
+        when(service.notes(TENANT, CLAIM_ID)).thenReturn(List.of(note()));
+
+        mvc.perform(get(BASE + "/notes")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(NOTE_ID.toString()))
+                .andExpect(jsonPath("$[0].claimId").value(CLAIM_ID.toString()))
+                .andExpect(jsonPath("$[0].noteNumber").value("NTE-2026-0000001"))
+                .andExpect(jsonPath("$[0].noteType").value("DIARY"))
+                .andExpect(jsonPath("$[0].body").value(
+                        "Called the claimant to confirm the medical authorization"))
+                .andExpect(jsonPath("$[0].author").value("Dana Handler"))
+                .andExpect(jsonPath("$[0].createdAt").value("2026-03-18T09:00:00Z"))
+                .andExpect(jsonPath("$[0].tenantId").doesNotExist());
+    }
+
+    @Test
+    void addsANote() throws Exception {
+        when(service.addNote(eq(TENANT), eq(CLAIM_ID), any(ClaimCommands.Note.class)))
+                .thenReturn(note());
+
+        mvc.perform(post(BASE + "/notes")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "noteType": "DIARY",
+                                  "body": "Called the claimant to confirm the medical authorization",
+                                  "author": "Dana Handler"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.noteNumber").value("NTE-2026-0000001"));
+    }
+
+    @Test
+    void noteRoutesKeepTheDirectBookWall() throws Exception {
+        mvc.perform(post(BASE + "/notes")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", "ASSUMED")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isNotFound());
+        verifyNoInteractions(service);
+    }
+
+    // ------------------------------------------------------------------ expert problems
+    @Test
+    void expertConflictOnATaskIsPreservedAs409() throws Exception {
+        when(service.changeTaskStatus(eq(TENANT), eq(CLAIM_ID), eq(TASK_ID),
+                any(ClaimCommands.TaskStatusChange.class)))
+                .thenThrow(expertProblem(409, "CONFLICT",
+                        "Claim task version 1 does not match current version 2"));
+
+        mvc.perform(patch(BASE + "/tasks/" + TASK_ID)
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\": \"COMPLETE\", \"version\": 1}"))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.message").value(
+                        "Claim task version 1 does not match current version 2"));
+    }
+
+    @Test
+    void expertNotFoundOnTasksIsPreservedAs404() throws Exception {
+        when(service.tasks(TENANT, CLAIM_ID))
+                .thenThrow(expertProblem(404, "NOT_FOUND", "Claim not found: " + CLAIM_ID));
+
+        mvc.perform(get(BASE + "/tasks")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("Claim not found: " + CLAIM_ID));
+    }
+
+    @Test
+    void expertBadRequestOnANoteIsPreservedAs400() throws Exception {
+        when(service.addNote(eq(TENANT), eq(CLAIM_ID), any(ClaimCommands.Note.class)))
+                .thenThrow(expertProblem(400, "VALIDATION_ERROR", "noteType is required"));
+
+        mvc.perform(post(BASE + "/notes")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"noteType\": \"GENERAL\", \"body\": \"Body\", \"author\": \"Author\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("noteType is required"));
+    }
+
+    private static RestClientResponseException expertProblem(int status, String code, String detail) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PROBLEM_JSON);
+        String body = """
+                {"type": "about:blank", "title": "Expert error", "status": %d,
+                 "code": "%s", "detail": "%s"}
+                """.formatted(status, code, detail);
+        return new RestClientResponseException("expert error", HttpStatusCode.valueOf(status),
+                "Expert error", headers, body.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
     }
 }
