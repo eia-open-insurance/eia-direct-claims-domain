@@ -25,10 +25,14 @@ public class ClaimService {
     }
 
     public List<ClaimDto> list(UUID tenantId, String statusFilter) {
+        return list(tenantId, statusFilter, null);
+    }
+
+    public List<ClaimDto> list(UUID tenantId, String statusFilter, UUID claimantPartyId) {
         ClaimStatus status = statusFilter == null || statusFilter.isBlank()
                 ? null
                 : ClaimStatus.from(statusFilter);
-        return client.findAll(tenantId, status);
+        return client.findAll(tenantId, status, claimantPartyId);
     }
 
     /**

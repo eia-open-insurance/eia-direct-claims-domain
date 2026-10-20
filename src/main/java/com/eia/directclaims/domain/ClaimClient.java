@@ -24,11 +24,18 @@ public class ClaimClient {
     }
 
     public List<ClaimDto> findAll(UUID tenantId, ClaimStatus status) {
+        return findAll(tenantId, status, null);
+    }
+
+    public List<ClaimDto> findAll(UUID tenantId, ClaimStatus status, UUID claimantPartyId) {
         return client.get()
                 .uri(uri -> {
                     uri.path("/internal/v1/claims").queryParam("tenantId", tenantId);
                     if (status != null) {
                         uri.queryParam("status", status.name());
+                    }
+                    if (claimantPartyId != null) {
+                        uri.queryParam("claimantPartyId", claimantPartyId);
                     }
                     return uri.build();
                 })

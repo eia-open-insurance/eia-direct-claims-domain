@@ -62,7 +62,7 @@ class ClaimControllerTest {
 
     @Test
     void listsClaimsForTheDirectBook() throws Exception {
-        when(service.list(TENANT, null)).thenReturn(List.of(claim("REGISTERED", 0)));
+        when(service.list(TENANT, null, null)).thenReturn(List.of(claim("REGISTERED", 0)));
 
         mvc.perform(get(URL)
                         .header("X-EIA-Tenant", TENANT)
@@ -75,7 +75,7 @@ class ClaimControllerTest {
 
     @Test
     void reserveAmountIsSerializedAsDecimalString() throws Exception {
-        when(service.list(TENANT, null)).thenReturn(List.of(claim("REGISTERED", 0)));
+        when(service.list(TENANT, null, null)).thenReturn(List.of(claim("REGISTERED", 0)));
 
         mvc.perform(get(URL)
                         .header("X-EIA-Tenant", TENANT)
@@ -85,6 +85,60 @@ class ClaimControllerTest {
                 .andExpect(jsonPath("$[0].reserveAmount").value("125000.0000"))
                 .andExpect(jsonPath("$[0].currentReserveAmount").isString())
                 .andExpect(jsonPath("$[0].settlementAuthorityAmount").isString());
+    }
+
+    @Test
+    void filtersClaimsByClaimantParty() throws Exception {
+        when(service.list(TENANT, null, CLAIMANT_ID)).thenReturn(List.of(claim("REGISTERED", 0)));
+
+        mvc.perform(get(URL)
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", "DIRECT")
+                        .param("claimantPartyId", CLAIMANT_ID.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].claimNumber").value("CLM-2026-0000001"))
+                .andExpect(jsonPath("$[0].claimantPartyId").value(CLAIMANT_ID.toString()));
+
+        verify(service).list(TENANT, null, CLAIMANT_ID);
+    }
+
+    @Test
+    void statusAndClaimantPartyFiltersAreCombined() throws Exception {
+        when(service.list(TENANT, "OPEN", CLAIMANT_ID)).thenReturn(List.of(claim("OPEN", 1)));
+
+        mvc.perform(get(URL)
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", "DIRECT")
+                        .param("status", "OPEN")
+                        .param("claimantPartyId", CLAIMANT_ID.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("OPEN"));
+
+        verify(service).list(TENANT, "OPEN", CLAIMANT_ID);
+    }
+
+    @Test
+    void claimantPartyFilterStaysInsideTheBookWall() throws Exception {
+        mvc.perform(get(URL)
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", "ASSUMED")
+                        .param("claimantPartyId", CLAIMANT_ID.toString()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void malformedClaimantPartyReturns400WithoutTouchingTheService() throws Exception {
+        mvc.perform(get(URL)
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", "DIRECT")
+                        .param("claimantPartyId", "not-a-uuid"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_ARGUMENT"));
+
+        verifyNoInteractions(service);
     }
 
     @Test

@@ -42,3 +42,7 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
   range, the 32-character layer, the (0, 1] percentage, and the non-negative amount, then
   forwards the tenant and DIRECT book to the expert; expert 400/404/409 problem+json
   responses keep their status and detail.
+- Claim list claimant filter: `GET /api/v1/claims` accepts an optional `claimantPartyId`
+  UUID alongside `status` and forwards both, with the tenant and DIRECT book, to the
+  expert's internal claim list. MockRestServiceServer tests cover the query parameters and
+  headers, and the public `ClaimDto` response shape is unchanged.

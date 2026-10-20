@@ -28,9 +28,10 @@ public class ClaimController {
     @GetMapping
     public List<ClaimDto> list(@RequestHeader(value = "X-EIA-Tenant", required = false) String tenantHeader,
                                @RequestHeader(value = "X-EIA-Book", required = false) String book,
-                               @RequestParam(value = "status", required = false) String status) {
+                               @RequestParam(value = "status", required = false) String status,
+                               @RequestParam(value = "claimantPartyId", required = false) UUID claimantPartyId) {
         RequestGuard.requireDirectBook(book);
-        return service.list(RequestGuard.requireTenant(tenantHeader), status);
+        return service.list(RequestGuard.requireTenant(tenantHeader), status, claimantPartyId);
     }
 
     @GetMapping("/search")

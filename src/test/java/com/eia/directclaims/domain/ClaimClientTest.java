@@ -19,6 +19,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static com.eia.directclaims.domain.DomainFixtures.ALLOCATION_ID;
+import static com.eia.directclaims.domain.DomainFixtures.CLAIMANT_ID;
 import static com.eia.directclaims.domain.DomainFixtures.CLAIM_ID;
 import static com.eia.directclaims.domain.DomainFixtures.NOTE_ID;
 import static com.eia.directclaims.domain.DomainFixtures.POLICY_ID;
@@ -447,6 +448,52 @@ class ClaimClientTest {
 
         assertEquals(400, error.getStatusCode().value());
         assertTrue(error.getResponseBodyAsString().contains("noteType is required"));
+        server.verify();
+    }
+
+    // ------------------------------------------------------------------ claims list
+    @Test
+    void findAllSendsTenantStatusAndClaimantQueryWithTheDirectBookHeader() {
+        server.expect(requestTo(EXPERT + "/internal/v1/claims?tenantId=" + TENANT
+                        + "&status=OPEN&claimantPartyId=" + CLAIMANT_ID))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header("X-EIA-Book", "DIRECT"))
+                .andRespond(withSuccess("[" + CLAIM_JSON + "]", MediaType.APPLICATION_JSON));
+
+        List<ClaimDto> claims = client.findAll(TENANT, ClaimStatus.OPEN, CLAIMANT_ID);
+
+        assertEquals(1, claims.size());
+        assertEquals(CLAIM_ID, claims.getFirst().id());
+        assertEquals(CLAIMANT_ID, claims.getFirst().claimantPartyId());
+        server.verify();
+    }
+
+    @Test
+    void findAllForwardsAnOptionalClaimantWithoutStatus() {
+        server.expect(requestTo(EXPERT + "/internal/v1/claims?tenantId=" + TENANT
+                        + "&claimantPartyId=" + CLAIMANT_ID))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header("X-EIA-Book", "DIRECT"))
+                .andRespond(withSuccess("[" + CLAIM_JSON + "]", MediaType.APPLICATION_JSON));
+
+        List<ClaimDto> claims = client.findAll(TENANT, null, CLAIMANT_ID);
+
+        assertEquals(1, claims.size());
+        assertEquals(CLAIM_ID, claims.getFirst().id());
+        server.verify();
+    }
+
+    @Test
+    void findAllWithoutFiltersSendsOnlyTheTenant() {
+        server.expect(requestTo(EXPERT + "/internal/v1/claims?tenantId=" + TENANT))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header("X-EIA-Book", "DIRECT"))
+                .andRespond(withSuccess("[" + CLAIM_JSON + "]", MediaType.APPLICATION_JSON));
+
+        List<ClaimDto> claims = client.findAll(TENANT, null, null);
+
+        assertEquals(1, claims.size());
+        assertEquals(CLAIM_ID, claims.getFirst().id());
         server.verify();
     }
 

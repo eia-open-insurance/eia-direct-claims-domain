@@ -114,12 +114,33 @@ class ClaimServiceTest {
 
     @Test
     void listNormalizesStatusForTheExpert() {
-        when(client.findAll(TENANT, ClaimStatus.OPEN)).thenReturn(List.of(dto("OPEN", 2)));
+        when(client.findAll(TENANT, ClaimStatus.OPEN, null)).thenReturn(List.of(dto("OPEN", 2)));
 
-        List<ClaimDto> result = service.list(TENANT, "open");
+        List<ClaimDto> result = service.list(TENANT, "open", null);
 
         assertEquals(1, result.size());
-        verify(client).findAll(TENANT, ClaimStatus.OPEN);
+        verify(client).findAll(TENANT, ClaimStatus.OPEN, null);
+    }
+
+    @Test
+    void listForwardsTheClaimantPartyFilter() {
+        when(client.findAll(TENANT, null, CLAIMANT_ID)).thenReturn(List.of(dto("REGISTERED", 0)));
+
+        List<ClaimDto> result = service.list(TENANT, null, CLAIMANT_ID);
+
+        assertEquals(1, result.size());
+        verify(client).findAll(TENANT, null, CLAIMANT_ID);
+    }
+
+    @Test
+    void listForwardsStatusAndClaimantPartyTogether() {
+        when(client.findAll(TENANT, ClaimStatus.OPEN, CLAIMANT_ID))
+                .thenReturn(List.of(dto("OPEN", 2)));
+
+        List<ClaimDto> result = service.list(TENANT, "open", CLAIMANT_ID);
+
+        assertEquals(1, result.size());
+        verify(client).findAll(TENANT, ClaimStatus.OPEN, CLAIMANT_ID);
     }
 
     @Test

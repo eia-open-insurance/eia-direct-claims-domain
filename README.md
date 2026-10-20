@@ -37,7 +37,7 @@ The service listens on **8088** and calls the expert at `eia.direct-claims.exper
 Public endpoints (all require `X-EIA-Tenant` and `X-EIA-Book: DIRECT`; any other or missing
 book returns 404, never 403):
 
-- `GET /api/v1/claims?status={status}`
+- `GET /api/v1/claims?status={status}&claimantPartyId={uuid}`
 - `GET /api/v1/claims/search?q={term}&limit=10`
 - `GET /api/v1/claims/{id}`
 - `POST /api/v1/claims`
