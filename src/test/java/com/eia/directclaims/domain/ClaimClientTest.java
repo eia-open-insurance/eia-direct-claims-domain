@@ -14,11 +14,14 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
+import static com.eia.directclaims.domain.DomainFixtures.ALLOCATION_ID;
 import static com.eia.directclaims.domain.DomainFixtures.CLAIM_ID;
 import static com.eia.directclaims.domain.DomainFixtures.NOTE_ID;
+import static com.eia.directclaims.domain.DomainFixtures.POLICY_ID;
 import static com.eia.directclaims.domain.DomainFixtures.TASK_ID;
 import static com.eia.directclaims.domain.DomainFixtures.TENANT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -38,6 +41,8 @@ class ClaimClientTest {
     private static final String TASK_URL = EXPERT + "/internal/v1/claims/" + CLAIM_ID + "/tasks";
     private static final String NOTE_URL = EXPERT + "/internal/v1/claims/" + CLAIM_ID + "/notes";
     private static final String ASSIGN_URL = EXPERT + "/internal/v1/claims/" + CLAIM_ID + "/assignment";
+    private static final String ALLOCATION_URL =
+            EXPERT + "/internal/v1/claims/" + CLAIM_ID + "/allocations";
 
     private static final String CLAIM_JSON = """
             {
@@ -98,6 +103,28 @@ class ClaimClientTest {
               "createdAt": "2026-03-18T09:00:00Z"
             }
             """;
+
+    private static final String ALLOCATION_JSON = """
+            {
+              "id": "0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d3b",
+              "tenantId": "11111111-1111-7111-8111-111111111111",
+              "claimId": "0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d21",
+              "policyId": "22222222-2222-7222-8222-222222222222",
+              "policyYear": 2024,
+              "layer": "PRIMARY",
+              "allocationPct": "0.250000",
+              "allocatedAmount": "31250.0000",
+              "createdAt": "2026-03-18T09:00:00Z"
+            }
+            """;
+
+    private static final String ALLOCATION_SUMMARY_JSON = """
+            {
+              "items": [%s],
+              "totalPct": "0.250000",
+              "totalAmount": "31250.0000"
+            }
+            """.formatted(ALLOCATION_JSON);
 
     private MockRestServiceServer server;
     private ClaimClient client;
@@ -420,6 +447,132 @@ class ClaimClientTest {
 
         assertEquals(400, error.getStatusCode().value());
         assertTrue(error.getResponseBodyAsString().contains("noteType is required"));
+        server.verify();
+    }
+
+    // ------------------------------------------------------------------ allocations
+    @Test
+    void findAllocationsSendsHeadersAndMapsTheSummary() {
+        server.expect(requestTo(ALLOCATION_URL + "?tenantId=" + TENANT))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header("X-EIA-Tenant", TENANT.toString()))
+                .andExpect(header("X-EIA-Book", "DIRECT"))
+                .andRespond(withSuccess(ALLOCATION_SUMMARY_JSON, MediaType.APPLICATION_JSON));
+
+        ClaimDetailDtos.AllocationSummary summary = client.findAllocations(TENANT, CLAIM_ID);
+
+        assertEquals(1, summary.items().size());
+        ClaimDetailDtos.Allocation allocation = summary.items().getFirst();
+        assertEquals(ALLOCATION_ID, allocation.allocationId());
+        assertEquals(CLAIM_ID, allocation.claimId());
+        assertEquals(POLICY_ID, allocation.policyId());
+        assertEquals(2024, allocation.policyYear());
+        assertEquals("PRIMARY", allocation.layer());
+        assertEquals(0, new BigDecimal("0.250000").compareTo(allocation.allocationPct()));
+        assertEquals(0, new BigDecimal("31250.0000").compareTo(allocation.allocatedAmount()));
+        assertEquals("2026-03-18T09:00:00Z", allocation.createdAt().toString());
+        assertEquals(0, new BigDecimal("0.250000").compareTo(summary.totalPct()));
+        assertEquals(0, new BigDecimal("31250.0000").compareTo(summary.totalAmount()));
+        server.verify();
+    }
+
+    @Test
+    void createAllocationPostsThePublicPayloadWithHeaders() {
+        server.expect(requestTo(ALLOCATION_URL))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("X-EIA-Tenant", TENANT.toString()))
+                .andExpect(header("X-EIA-Book", "DIRECT"))
+                .andExpect(content().json("""
+                        {
+                          "policyId": "22222222-2222-7222-8222-222222222222",
+                          "policyYear": 2024,
+                          "layer": "PRIMARY",
+                          "allocationPct": 0.25,
+                          "allocatedAmount": 31250.0000
+                        }
+                        """, JsonCompareMode.STRICT))
+                .andRespond(withStatus(HttpStatus.CREATED)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(ALLOCATION_JSON));
+
+        ClaimDetailDtos.Allocation allocation = client.createAllocation(TENANT, CLAIM_ID,
+                new ClaimCommands.Allocation(POLICY_ID, 2024, "PRIMARY",
+                        new BigDecimal("0.25"), new BigDecimal("31250.0000")));
+
+        assertEquals(ALLOCATION_ID, allocation.allocationId());
+        assertEquals(CLAIM_ID, allocation.claimId());
+        assertEquals(POLICY_ID, allocation.policyId());
+        assertEquals(2024, allocation.policyYear());
+        assertEquals("PRIMARY", allocation.layer());
+        server.verify();
+    }
+
+    @Test
+    void propagatesAnExpertConflictForAllocations() {
+        server.expect(requestTo(ALLOCATION_URL))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.CONFLICT)
+                        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                        .body("""
+                                {
+                                  "title": "Conflict",
+                                  "status": 409,
+                                  "detail": "Allocations for claim CLM-2026-0000001 would total 1.100000, which exceeds 1",
+                                  "code": "ALLOCATION_EXCEEDS_100"
+                                }
+                                """));
+
+        RestClientResponseException error = assertThrows(RestClientResponseException.class,
+                () -> client.createAllocation(TENANT, CLAIM_ID,
+                        new ClaimCommands.Allocation(POLICY_ID, 2024, "PRIMARY",
+                                new BigDecimal("0.85"), new BigDecimal("106250.0000"))));
+
+        assertEquals(409, error.getStatusCode().value());
+        assertTrue(error.getResponseBodyAsString().contains("ALLOCATION_EXCEEDS_100"));
+        server.verify();
+    }
+
+    @Test
+    void propagatesAnExpertBadRequestForAllocations() {
+        server.expect(requestTo(ALLOCATION_URL))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST)
+                        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                        .body("""
+                                {
+                                  "title": "Policy mismatch",
+                                  "status": 400,
+                                  "detail": "policyId does not match the claim policy",
+                                  "code": "POLICY_MISMATCH"
+                                }
+                                """));
+
+        RestClientResponseException error = assertThrows(RestClientResponseException.class,
+                () -> client.createAllocation(TENANT, CLAIM_ID,
+                        new ClaimCommands.Allocation(DomainFixtures.OTHER_ID, 2024, "PRIMARY",
+                                new BigDecimal("0.25"), new BigDecimal("31250.0000"))));
+
+        assertEquals(400, error.getStatusCode().value());
+        assertTrue(error.getResponseBodyAsString().contains("POLICY_MISMATCH"));
+        server.verify();
+    }
+
+    @Test
+    void propagatesAnExpertNotFoundProblemForAllocations() {
+        server.expect(requestTo(ALLOCATION_URL + "?tenantId=" + TENANT))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND)
+                        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                        .body("""
+                                {"title": "Not found", "status": 404,
+                                 "detail": "Claim not found", "code": "NOT_FOUND"}
+                                """));
+
+        RestClientResponseException error = assertThrows(RestClientResponseException.class,
+                () -> client.findAllocations(TENANT, CLAIM_ID));
+
+        assertEquals(404, error.getStatusCode().value());
+        assertTrue(error.getResponseBodyAsString().contains("Claim not found"));
         server.verify();
     }
 }

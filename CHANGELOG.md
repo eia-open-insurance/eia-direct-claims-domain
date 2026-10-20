@@ -34,3 +34,11 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
   optional `X-EIA-Actor` header. `ClaimDto` exposes `assignedAdjuster`, `assignedTeam`, and
   `assignedAt`; the expert's 400/404/409 problem+json responses are preserved, including a
   stale-version 409.
+- Claim allocations: `GET /api/v1/claims/{claimId}/allocations` returns
+  `{items, totalPct, totalAmount}` oldest first, and `POST` accepts
+  `{policyId, policyYear, layer, allocationPct, allocatedAmount}` and returns 201. The public
+  `Allocation` projection uses `allocationId`, omits `tenantId`, and serializes money and
+  percentages as decimal strings. The domain validates the required fields, the policy year
+  range, the 32-character layer, the (0, 1] percentage, and the non-negative amount, then
+  forwards the tenant and DIRECT book to the expert; expert 400/404/409 problem+json
+  responses keep their status and detail.

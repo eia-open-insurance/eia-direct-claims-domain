@@ -68,6 +68,20 @@ public final class ClaimCommands {
     ) {
     }
 
+    /**
+     * Command to split part of a claim across a policy year and layer. The
+     * expert owns the policy match, the percentage total, and every other
+     * invariant; the domain validates the caller-fixable contract fields first.
+     */
+    public record Allocation(
+            UUID policyId,
+            Integer policyYear,
+            String layer,
+            BigDecimal allocationPct,
+            BigDecimal allocatedAmount
+    ) {
+    }
+
     public record Litigation(
             String matterType,
             String jurisdiction,

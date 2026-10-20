@@ -106,6 +106,35 @@ public final class ClaimDetailDtos {
     ) {
     }
 
+    /**
+     * A policy-year and layer allocation of a claim. The public projection uses
+     * {@code allocationId} and omits the expert's {@code tenantId}; the tenant
+     * is implied by the request context. Money and percentages are decimal
+     * strings.
+     */
+    public record Allocation(
+            UUID allocationId,
+            UUID claimId,
+            UUID policyId,
+            int policyYear,
+            String layer,
+            @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal allocationPct,
+            @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal allocatedAmount,
+            Instant createdAt
+    ) {
+    }
+
+    /**
+     * Claim allocations oldest first plus the sum of the allocation
+     * percentages and allocated amounts across the claim.
+     */
+    public record AllocationSummary(
+            List<Allocation> items,
+            @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal totalPct,
+            @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal totalAmount
+    ) {
+    }
+
     public record Litigation(
             UUID id,
             UUID tenantId,

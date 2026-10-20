@@ -3,6 +3,7 @@ package com.eia.directclaims.domain;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
@@ -23,6 +24,9 @@ public class ClaimDetailService {
     private static final Set<String> TASK_STATUSES = Set.of("OPEN", "COMPLETE", "CANCELLED");
     private static final Set<String> NOTE_TYPES = Set.of(
             "DIARY", "COVERAGE", "RESERVE", "LITIGATION", "SETTLEMENT", "GENERAL");
+    private static final int MIN_POLICY_YEAR = 1900;
+    private static final int MAX_POLICY_YEAR = 2200;
+    private static final int MAX_LAYER_LENGTH = 32;
 
     private final ClaimClient client;
 
@@ -135,6 +139,48 @@ public class ClaimDetailService {
             throw new DomainValidationException("allocationPct must be between 0 and 1");
         }
         return client.decideCoverage(tenantId, claimId, command);
+    }
+
+    // ------------------------------------------------------------------ allocations
+    public ClaimDetailDtos.AllocationSummary allocations(UUID tenantId, UUID claimId) {
+        return client.findAllocations(tenantId, claimId);
+    }
+
+    public ClaimDetailDtos.Allocation allocate(UUID tenantId, UUID claimId,
+                                               ClaimCommands.Allocation command) {
+        requireId(command.policyId(), "policyId");
+        if (command.policyYear() == null) {
+            throw new DomainValidationException("policyYear is required");
+        }
+        if (command.policyYear() < MIN_POLICY_YEAR || command.policyYear() > MAX_POLICY_YEAR) {
+            throw new DomainValidationException("policyYear must be between " + MIN_POLICY_YEAR
+                    + " and " + MAX_POLICY_YEAR);
+        }
+        String layer = requireText(command.layer(), "layer");
+        if (layer.length() > MAX_LAYER_LENGTH) {
+            throw new DomainValidationException("layer must be at most " + MAX_LAYER_LENGTH
+                    + " characters");
+        }
+        requireAllocationPct(command.allocationPct());
+        nonNegative(command.allocatedAmount(), "allocatedAmount");
+        return client.createAllocation(tenantId, claimId, command);
+    }
+
+    /**
+     * The allocation percentage is a fraction in (0, 1]. It is rounded to six
+     * decimals first so a value that rounds to zero or above one is rejected
+     * exactly like the expert's numeric(9,6) column.
+     */
+    private static void requireAllocationPct(BigDecimal value) {
+        if (value == null) {
+            throw new DomainValidationException("allocationPct is required");
+        }
+        BigDecimal scaled = value.setScale(6, RoundingMode.HALF_UP);
+        if (value.signum() <= 0 || value.compareTo(BigDecimal.ONE) > 0
+                || scaled.signum() <= 0 || scaled.compareTo(BigDecimal.ONE) > 0) {
+            throw new DomainValidationException(
+                    "allocationPct must be greater than 0 and at most 1");
+        }
     }
 
     // ------------------------------------------------------------------ litigation

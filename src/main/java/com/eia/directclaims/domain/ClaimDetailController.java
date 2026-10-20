@@ -135,6 +135,27 @@ public class ClaimDetailController {
         return service.decideCoverage(RequestGuard.requireTenant(tenantHeader), claimId, command);
     }
 
+    // ------------------------------------------------------------------ allocations
+    @GetMapping("/allocations")
+    public ClaimDetailDtos.AllocationSummary allocations(
+            @RequestHeader(value = "X-EIA-Tenant", required = false) String tenantHeader,
+            @RequestHeader(value = "X-EIA-Book", required = false) String book,
+            @PathVariable UUID claimId) {
+        RequestGuard.requireDirectBook(book);
+        return service.allocations(RequestGuard.requireTenant(tenantHeader), claimId);
+    }
+
+    @PostMapping("/allocations")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ClaimDetailDtos.Allocation allocate(
+            @RequestHeader(value = "X-EIA-Tenant", required = false) String tenantHeader,
+            @RequestHeader(value = "X-EIA-Book", required = false) String book,
+            @PathVariable UUID claimId,
+            @Valid @RequestBody ClaimCommands.Allocation command) {
+        RequestGuard.requireDirectBook(book);
+        return service.allocate(RequestGuard.requireTenant(tenantHeader), claimId, command);
+    }
+
     // ------------------------------------------------------------------ litigation
     @GetMapping("/litigation")
     public List<ClaimDetailDtos.Litigation> litigation(

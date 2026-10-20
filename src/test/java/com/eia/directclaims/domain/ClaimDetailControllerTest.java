@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+import static com.eia.directclaims.domain.DomainFixtures.ALLOCATION_ID;
 import static com.eia.directclaims.domain.DomainFixtures.CLAIM_ID;
 import static com.eia.directclaims.domain.DomainFixtures.COVERAGE_ID;
 import static com.eia.directclaims.domain.DomainFixtures.EXPOSURE_ID;
@@ -25,6 +26,8 @@ import static com.eia.directclaims.domain.DomainFixtures.RECOVERY_ID;
 import static com.eia.directclaims.domain.DomainFixtures.SETTLEMENT_ID;
 import static com.eia.directclaims.domain.DomainFixtures.TASK_ID;
 import static com.eia.directclaims.domain.DomainFixtures.TENANT;
+import static com.eia.directclaims.domain.DomainFixtures.allocation;
+import static com.eia.directclaims.domain.DomainFixtures.allocationSummary;
 import static com.eia.directclaims.domain.DomainFixtures.coverage;
 import static com.eia.directclaims.domain.DomainFixtures.exposure;
 import static com.eia.directclaims.domain.DomainFixtures.injury;
@@ -262,6 +265,138 @@ class ClaimDetailControllerTest {
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.position").value("DEFENSE_ONLY"));
+    }
+
+    // ------------------------------------------------------------------ allocations
+    @Test
+    void returnsTheAllocationSummary() throws Exception {
+        when(service.allocations(TENANT, CLAIM_ID)).thenReturn(allocationSummary());
+
+        mvc.perform(get(BASE + "/allocations").header("X-EIA-Tenant", TENANT).header("X-EIA-Book", DIRECT))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].allocationId").value(ALLOCATION_ID.toString()))
+                .andExpect(jsonPath("$.items[0].claimId").value(CLAIM_ID.toString()))
+                .andExpect(jsonPath("$.items[0].policyId")
+                        .value("22222222-2222-7222-8222-222222222222"))
+                .andExpect(jsonPath("$.items[0].policyYear").value(2024))
+                .andExpect(jsonPath("$.items[0].layer").value("PRIMARY"))
+                .andExpect(jsonPath("$.items[0].allocationPct").isString())
+                .andExpect(jsonPath("$.items[0].allocationPct").value("0.250000"))
+                .andExpect(jsonPath("$.items[0].allocatedAmount").isString())
+                .andExpect(jsonPath("$.items[0].allocatedAmount").value("31250.0000"))
+                .andExpect(jsonPath("$.items[0].createdAt").value("2026-03-18T09:00:00Z"))
+                .andExpect(jsonPath("$.items[0].tenantId").doesNotExist())
+                .andExpect(jsonPath("$.totalPct").value("0.250000"))
+                .andExpect(jsonPath("$.totalAmount").value("31250.0000"));
+    }
+
+    @Test
+    void recordsAnAllocation() throws Exception {
+        when(service.allocate(eq(TENANT), eq(CLAIM_ID), any(ClaimCommands.Allocation.class)))
+                .thenReturn(allocation());
+
+        mvc.perform(post(BASE + "/allocations")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "policyId": "22222222-2222-7222-8222-222222222222",
+                                  "policyYear": 2024,
+                                  "layer": "PRIMARY",
+                                  "allocationPct": 0.25,
+                                  "allocatedAmount": "31250.00"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.allocationId").value(ALLOCATION_ID.toString()))
+                .andExpect(jsonPath("$.claimId").value(CLAIM_ID.toString()))
+                .andExpect(jsonPath("$.policyYear").value(2024))
+                .andExpect(jsonPath("$.layer").value("PRIMARY"))
+                .andExpect(jsonPath("$.allocationPct").isString())
+                .andExpect(jsonPath("$.allocationPct").value("0.250000"))
+                .andExpect(jsonPath("$.allocatedAmount").isString())
+                .andExpect(jsonPath("$.allocatedAmount").value("31250.0000"))
+                .andExpect(jsonPath("$.tenantId").doesNotExist());
+    }
+
+    @Test
+    void allocationRoutesKeepTheDirectBookWall() throws Exception {
+        mvc.perform(get(BASE + "/allocations")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", "ASSUMED"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void allocationMissingTenantIsAStructured400() throws Exception {
+        mvc.perform(get(BASE + "/allocations").header("X-EIA-Book", DIRECT))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("X-EIA-Tenant header is required"));
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void expertAllocationExceedsHundredIsPreservedAs409() throws Exception {
+        when(service.allocate(eq(TENANT), eq(CLAIM_ID), any(ClaimCommands.Allocation.class)))
+                .thenThrow(expertProblem(409, "ALLOCATION_EXCEEDS_100",
+                        "Allocations for claim CLM-2026-0000001 would total 1.100000, which exceeds 1"));
+
+        mvc.perform(post(BASE + "/allocations")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "policyId": "22222222-2222-7222-8222-222222222222",
+                                  "policyYear": 2024,
+                                  "layer": "PRIMARY",
+                                  "allocationPct": 0.85,
+                                  "allocatedAmount": "106250.00"
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.message").value(
+                        "Allocations for claim CLM-2026-0000001 would total 1.100000, which exceeds 1"));
+    }
+
+    @Test
+    void expertPolicyMismatchIsPreservedAs400() throws Exception {
+        when(service.allocate(eq(TENANT), eq(CLAIM_ID), any(ClaimCommands.Allocation.class)))
+                .thenThrow(expertProblem(400, "POLICY_MISMATCH",
+                        "policyId does not match the claim policy"));
+
+        mvc.perform(post(BASE + "/allocations")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "policyId": "44444444-4444-7444-8444-444444444444",
+                                  "policyYear": 2024,
+                                  "layer": "PRIMARY",
+                                  "allocationPct": 0.25,
+                                  "allocatedAmount": "31250.00"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("policyId does not match the claim policy"));
+    }
+
+    @Test
+    void expertNotFoundOnAllocationsIsPreservedAs404() throws Exception {
+        when(service.allocations(TENANT, CLAIM_ID))
+                .thenThrow(expertProblem(404, "NOT_FOUND", "Claim not found: " + CLAIM_ID));
+
+        mvc.perform(get(BASE + "/allocations").header("X-EIA-Tenant", TENANT).header("X-EIA-Book", DIRECT))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("Claim not found: " + CLAIM_ID));
     }
 
     // ------------------------------------------------------------------ litigation

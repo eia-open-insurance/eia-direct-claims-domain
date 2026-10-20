@@ -6,6 +6,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -195,6 +197,32 @@ public class ClaimClient {
                 .body(command)
                 .retrieve()
                 .body(ClaimDetailDtos.CoverageDecision.class);
+    }
+
+    // ------------------------------------------------------------------ allocations
+    // The expert serves allocations on both its public claim prefix and the
+    // internal claim prefix; the domain uses the internal route like every
+    // other expert call.
+    public ClaimDetailDtos.AllocationSummary findAllocations(UUID tenantId, UUID claimId) {
+        AllocationSummaryResponse response = client.get()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/allocations")
+                        .queryParam("tenantId", tenantId)
+                        .build(claimId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .retrieve()
+                .body(AllocationSummaryResponse.class);
+        return response.toPublic();
+    }
+
+    public ClaimDetailDtos.Allocation createAllocation(UUID tenantId, UUID claimId,
+                                                       ClaimCommands.Allocation command) {
+        AllocationResponse response = client.post()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/allocations").build(claimId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(AllocationResponse.class);
+        return response.toPublic();
     }
 
     // ------------------------------------------------------------------ litigation
@@ -441,5 +469,39 @@ public class ClaimClient {
     }
 
     record AssignmentRequest(String assignedAdjuster, String assignedTeam, Integer expectedVersion) {
+    }
+
+    /**
+     * The expert's allocation projection uses {@code id} and carries the
+     * {@code tenantId}; the public domain projection uses {@code allocationId}
+     * and omits the tenant implied by the request context.
+     */
+    record AllocationResponse(
+            UUID id,
+            UUID tenantId,
+            UUID claimId,
+            UUID policyId,
+            int policyYear,
+            String layer,
+            BigDecimal allocationPct,
+            BigDecimal allocatedAmount,
+            Instant createdAt
+    ) {
+        ClaimDetailDtos.Allocation toPublic() {
+            return new ClaimDetailDtos.Allocation(id, claimId, policyId, policyYear, layer,
+                    allocationPct, allocatedAmount, createdAt);
+        }
+    }
+
+    record AllocationSummaryResponse(
+            List<AllocationResponse> items,
+            BigDecimal totalPct,
+            BigDecimal totalAmount
+    ) {
+        ClaimDetailDtos.AllocationSummary toPublic() {
+            List<ClaimDetailDtos.Allocation> allocations = items == null ? List.of()
+                    : items.stream().map(AllocationResponse::toPublic).toList();
+            return new ClaimDetailDtos.AllocationSummary(allocations, totalPct, totalAmount);
+        }
     }
 }

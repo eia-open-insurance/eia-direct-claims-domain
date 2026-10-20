@@ -23,6 +23,7 @@ final class DomainFixtures {
     static final UUID LIEN_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d38");
     static final UUID TASK_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d39");
     static final UUID NOTE_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d3a");
+    static final UUID ALLOCATION_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d3b");
     static final Instant NOW = Instant.parse("2026-03-18T09:00:00Z");
 
     private DomainFixtures() {
@@ -100,5 +101,15 @@ final class DomainFixtures {
     static ClaimDetailDtos.Note note() {
         return new ClaimDetailDtos.Note(NOTE_ID, CLAIM_ID, "NTE-2026-0000001", "DIARY",
                 "Called the claimant to confirm the medical authorization", "Dana Handler", NOW);
+    }
+
+    static ClaimDetailDtos.Allocation allocation() {
+        return new ClaimDetailDtos.Allocation(ALLOCATION_ID, CLAIM_ID, POLICY_ID, 2024, "PRIMARY",
+                new BigDecimal("0.250000"), new BigDecimal("31250.0000"), NOW);
+    }
+
+    static ClaimDetailDtos.AllocationSummary allocationSummary() {
+        return new ClaimDetailDtos.AllocationSummary(List.of(allocation()),
+                new BigDecimal("0.250000"), new BigDecimal("31250.0000"));
     }
 }

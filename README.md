@@ -47,7 +47,8 @@ book returns 404, never 403):
 - `GET|POST /api/v1/claims/{id}/injuries`, `PATCH /api/v1/claims/{id}/injuries/{injuryId}`
 - `GET|POST /api/v1/claims/{id}/exposures`, `PATCH /api/v1/claims/{id}/exposures/{exposureId}`
 - `GET|POST /api/v1/claims/{id}/reserves`
-- `GET|POST /api/v1/claims/{id}/coverage`
+- `GET /api/v1/claims/{id}/coverage`, `POST /api/v1/claims/{id}/coverage`
+- `GET|POST /api/v1/claims/{id}/allocations`
 - `GET|POST /api/v1/claims/{id}/litigation`, `PATCH .../litigation/{litigationId}`
 - `GET|POST /api/v1/claims/{id}/settlements`, `POST .../settlements/{settlementId}/approve`,
   `POST .../settlements/{settlementId}/execute`
@@ -71,6 +72,17 @@ the DIRECT book, the optional `X-EIA-Actor` header, and the exact
 `{assignedAdjuster, assignedTeam, expectedVersion}` payload to the expert; a stale version is
 preserved as the expert's 409 problem+json. Claim responses expose `assignedAdjuster`,
 `assignedTeam`, and `assignedAt`.
+
+`GET /api/v1/claims/{claimId}/allocations` returns the policy-year and layer split of a claim
+as `{items, totalPct, totalAmount}` oldest first. `POST` takes
+`{policyId, policyYear, layer, allocationPct, allocatedAmount}` and returns 201 with the
+created allocation. The domain requires the policy, year, layer, percentage, and amount;
+`allocationPct` must be greater than 0 and at most 1, `allocatedAmount` must be zero or
+greater, `layer` is at most 32 characters, and `policyYear` is 1900-2200. The expert remains
+authoritative for the claim's own policy, the 1.0 percentage total across the claim, and
+every other invariant; expert 400/404/409 problem+json responses keep their status and
+detail. Allocation projections use `allocationId` and omit the expert's `tenantId`; money
+and percentages are decimal strings.
 
 `GET /api/v1/claims/search` matches `claimNumber`, `claimType`, `causeCode`, and `policyId`
 case-insensitively for the caller's tenant and the DIRECT book. A blank `q` returns the latest

@@ -191,6 +191,74 @@ class ClaimDetailServiceTest {
         assertEquals(decision, service.decideCoverage(TENANT, CLAIM_ID, command));
     }
 
+    // ------------------------------------------------------------------ allocations
+    @Test
+    void allocationRequiresPolicyYearAndLayer() {
+        assertThrows(DomainValidationException.class, () -> service.allocate(TENANT, CLAIM_ID,
+                new ClaimCommands.Allocation(null, 2024, "PRIMARY", new BigDecimal("0.25"),
+                        new BigDecimal("1000"))));
+        assertThrows(DomainValidationException.class, () -> service.allocate(TENANT, CLAIM_ID,
+                new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, null, "PRIMARY",
+                        new BigDecimal("0.25"), new BigDecimal("1000"))));
+        assertThrows(DomainValidationException.class, () -> service.allocate(TENANT, CLAIM_ID,
+                new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, 2024, " ",
+                        new BigDecimal("0.25"), new BigDecimal("1000"))));
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void allocationRejectsAnImpossibleYearOrAnOverlongLayer() {
+        assertThrows(DomainValidationException.class, () -> service.allocate(TENANT, CLAIM_ID,
+                new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, 1899, "PRIMARY",
+                        new BigDecimal("0.25"), new BigDecimal("1000"))));
+        assertThrows(DomainValidationException.class, () -> service.allocate(TENANT, CLAIM_ID,
+                new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, 2024,
+                        "A".repeat(33), new BigDecimal("0.25"), new BigDecimal("1000"))));
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void allocationRejectsAPercentageOutsideTheOpenUnitInterval() {
+        assertThrows(DomainValidationException.class, () -> service.allocate(TENANT, CLAIM_ID,
+                new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, 2024, "PRIMARY",
+                        BigDecimal.ZERO, new BigDecimal("1000"))));
+        assertThrows(DomainValidationException.class, () -> service.allocate(TENANT, CLAIM_ID,
+                new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, 2024, "PRIMARY",
+                        new BigDecimal("1.000001"), new BigDecimal("1000"))));
+        assertThrows(DomainValidationException.class, () -> service.allocate(TENANT, CLAIM_ID,
+                new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, 2024, "PRIMARY", null,
+                        new BigDecimal("1000"))));
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void allocationRejectsANegativeAmount() {
+        DomainValidationException error = assertThrows(DomainValidationException.class,
+                () -> service.allocate(TENANT, CLAIM_ID,
+                        new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, 2024, "PRIMARY",
+                                new BigDecimal("0.25"), new BigDecimal("-0.01"))));
+        assertTrue(error.getMessage().contains("zero or greater"));
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void allocationDelegatesAValidSplit() {
+        ClaimCommands.Allocation command = new ClaimCommands.Allocation(DomainFixtures.POLICY_ID,
+                2024, "PRIMARY", new BigDecimal("0.25"), new BigDecimal("31250.0000"));
+        ClaimDetailDtos.Allocation created = DomainFixtures.allocation();
+        when(client.createAllocation(TENANT, CLAIM_ID, command)).thenReturn(created);
+
+        assertEquals(created, service.allocate(TENANT, CLAIM_ID, command));
+    }
+
+    @Test
+    void allocationSummaryDelegatesToTheExpert() {
+        ClaimDetailDtos.AllocationSummary summary = DomainFixtures.allocationSummary();
+        when(client.findAllocations(TENANT, CLAIM_ID)).thenReturn(summary);
+
+        assertSame(summary, service.allocations(TENANT, CLAIM_ID));
+    }
+
     @Test
     void litigationRejectsATrialBeforeFiling() {
         ClaimCommands.Litigation command = new ClaimCommands.Litigation("DEFENSE", "US-OH", OTHER_ID,
