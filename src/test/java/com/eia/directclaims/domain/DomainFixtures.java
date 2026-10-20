@@ -26,6 +26,8 @@ final class DomainFixtures {
     static final UUID ALLOCATION_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d3b");
     static final UUID LIMIT_ID = UUID.fromString("66666666-6666-7666-8666-666666666666");
     static final Instant NOW = Instant.parse("2026-03-18T09:00:00Z");
+    static final LocalDate MASS_TORT_BLOCK_START = LocalDate.of(2024, 1, 1);
+    static final LocalDate MASS_TORT_BLOCK_END = LocalDate.of(2028, 12, 31);
 
     private DomainFixtures() {
     }
@@ -131,5 +133,15 @@ final class DomainFixtures {
     static ClaimDetailDtos.AllocationSummary allocationSummary() {
         return new ClaimDetailDtos.AllocationSummary(List.of(allocation()),
                 new BigDecimal("0.250000"), new BigDecimal("31250.0000"));
+    }
+
+    static PolicyMassTortClient.MassTortProfile massTortProfile(String status,
+                                                                LocalDate blockStart,
+                                                                LocalDate blockEnd) {
+        return new PolicyMassTortClient.MassTortProfile(status, blockStart, blockEnd);
+    }
+
+    static PolicyMassTortClient.MassTortProfile completeMassTortProfile() {
+        return massTortProfile("COMPLETE", MASS_TORT_BLOCK_START, MASS_TORT_BLOCK_END);
     }
 }

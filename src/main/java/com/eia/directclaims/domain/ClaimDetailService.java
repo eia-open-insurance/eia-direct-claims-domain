@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -38,10 +39,14 @@ public class ClaimDetailService {
 
     private final ClaimClient client;
     private final PolicyErosionClient policyClient;
+    private final PolicyMassTortClient massTortClient;
 
-    public ClaimDetailService(ClaimClient client, PolicyErosionClient policyClient) {
+    public ClaimDetailService(ClaimClient client,
+                              PolicyErosionClient policyClient,
+                              PolicyMassTortClient massTortClient) {
         this.client = client;
         this.policyClient = policyClient;
+        this.massTortClient = massTortClient;
     }
 
     // ------------------------------------------------------------------ injuries
@@ -173,11 +178,37 @@ public class ClaimDetailService {
         }
         requireAllocationPct(command.allocationPct());
         nonNegative(command.allocatedAmount(), "allocatedAmount");
+        requireMassTortCoverageBlock(tenantId, command.policyId(), command.policyYear());
         ClaimDetailDtos.Allocation allocation = client.createAllocation(tenantId, claimId, command);
         if (command.limitId() == null) {
             return allocation;
         }
         return postErosion(tenantId, claimId, allocation, command.limitId());
+    }
+
+    /**
+     * A COMPLETE Policy mass-tort profile bounds the policy years a long-tail
+     * claim may be allocated to. The block is inclusive, so both the start and
+     * end year are allowed. A DRAFT profile, a profile without a complete
+     * block, an absent profile (404), and an unavailable Policy service all
+     * leave the allocation allowed: the profile read must never block a claim
+     * create by being unavailable.
+     */
+    private void requireMassTortCoverageBlock(UUID tenantId, UUID policyId, int policyYear) {
+        Optional<PolicyMassTortClient.MassTortProfile> profile =
+                massTortClient.findProfile(tenantId, policyId);
+        if (profile.isEmpty()) {
+            return;
+        }
+        PolicyMassTortClient.MassTortProfile massTort = profile.get();
+        if (!massTort.isComplete() || !massTort.hasCoverageBlock()) {
+            return;
+        }
+        if (policyYear < massTort.coverageBlockStart().getYear()
+                || policyYear > massTort.coverageBlockEnd().getYear()) {
+            throw new MassTortYearOutsideBlockException(policyYear,
+                    massTort.coverageBlockStart(), massTort.coverageBlockEnd());
+        }
     }
 
     /**

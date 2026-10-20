@@ -12,6 +12,7 @@ import org.springframework.web.client.RestClientResponseException;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.List;
 
 import static com.eia.directclaims.domain.DomainFixtures.ALLOCATION_ID;
@@ -403,6 +404,34 @@ class ClaimDetailControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("X-EIA-Tenant header is required"));
         verifyNoInteractions(service);
+    }
+
+    @Test
+    void allocationOutsideTheMassTortBlockIsA400() throws Exception {
+        when(service.allocate(eq(TENANT), eq(CLAIM_ID), any(ClaimCommands.Allocation.class)))
+                .thenThrow(new MassTortYearOutsideBlockException(2023,
+                        LocalDate.of(2024, 1, 1), LocalDate.of(2028, 12, 31)));
+
+        mvc.perform(post(BASE + "/allocations")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "policyId": "22222222-2222-7222-8222-222222222222",
+                                  "policyYear": 2023,
+                                  "layer": "PRIMARY",
+                                  "allocationPct": 0.25,
+                                  "allocatedAmount": "31250.00"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("MASS_TORT_YEAR_OUTSIDE_BLOCK"))
+                .andExpect(jsonPath("$.message").value(
+                        "policyYear 2023 is outside the mass tort coverage block "
+                                + "2024-01-01 to 2028-12-31"));
     }
 
     @Test

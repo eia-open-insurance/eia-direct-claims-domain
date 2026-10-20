@@ -53,6 +53,13 @@ public class ApiExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", ex.getMessage(), request, null);
     }
 
+    @ExceptionHandler(MassTortYearOutsideBlockException.class)
+    public ResponseEntity<ApiError> massTortYearOutsideBlock(MassTortYearOutsideBlockException ex,
+                                                             HttpServletRequest request) {
+        return error(HttpStatus.BAD_REQUEST, "MASS_TORT_YEAR_OUTSIDE_BLOCK", ex.getMessage(),
+                request, null);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> beanValidation(MethodArgumentNotValidException ex, HttpServletRequest request) {
         List<FieldViolation> details = ex.getBindingResult().getFieldErrors().stream()

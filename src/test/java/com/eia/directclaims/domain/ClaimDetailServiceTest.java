@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -22,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -38,6 +41,9 @@ class ClaimDetailServiceTest {
 
     @Mock
     private PolicyErosionClient policyClient;
+
+    @Mock
+    private PolicyMassTortClient massTortClient;
 
     @InjectMocks
     private ClaimDetailService service;
@@ -251,6 +257,7 @@ class ClaimDetailServiceTest {
 
     @Test
     void allocationDelegatesAValidSplit() {
+        noMassTortProfile();
         ClaimCommands.Allocation command = allocation(null);
         ClaimDetailDtos.Allocation created = DomainFixtures.allocation();
         when(client.createAllocation(TENANT, CLAIM_ID, command)).thenReturn(created);
@@ -260,6 +267,7 @@ class ClaimDetailServiceTest {
 
     @Test
     void allocationWithoutALimitLeavesErosionNotPosted() {
+        noMassTortProfile();
         ClaimCommands.Allocation command = allocation(null);
         ClaimDetailDtos.Allocation created = DomainFixtures.allocation();
         when(client.createAllocation(TENANT, CLAIM_ID, command)).thenReturn(created);
@@ -272,7 +280,92 @@ class ClaimDetailServiceTest {
     }
 
     @Test
+    void allocationInsideACompleteMassTortBlockIsCreated() {
+        massTortProfile(DomainFixtures.completeMassTortProfile());
+        ClaimCommands.Allocation command = allocation(null, 2026);
+        ClaimDetailDtos.Allocation created = DomainFixtures.allocation();
+        when(client.createAllocation(TENANT, CLAIM_ID, command)).thenReturn(created);
+
+        assertSame(created, service.allocate(TENANT, CLAIM_ID, command));
+    }
+
+    @Test
+    void bothMassTortBlockBoundaryYearsAreCreated() {
+        massTortProfile(DomainFixtures.completeMassTortProfile());
+        ClaimDetailDtos.Allocation created = DomainFixtures.allocation();
+        when(client.createAllocation(eq(TENANT), eq(CLAIM_ID), any(ClaimCommands.Allocation.class)))
+                .thenReturn(created);
+
+        assertSame(created, service.allocate(TENANT, CLAIM_ID, allocation(null, 2024)));
+        assertSame(created, service.allocate(TENANT, CLAIM_ID, allocation(null, 2028)));
+
+        verify(client, times(2)).createAllocation(eq(TENANT), eq(CLAIM_ID),
+                any(ClaimCommands.Allocation.class));
+    }
+
+    @Test
+    void anAllocationOutsideTheMassTortBlockIsRejectedBeforeCreate() {
+        massTortProfile(DomainFixtures.completeMassTortProfile());
+
+        MassTortYearOutsideBlockException error = assertThrows(
+                MassTortYearOutsideBlockException.class,
+                () -> service.allocate(TENANT, CLAIM_ID, allocation(null, 2023)));
+
+        assertEquals(2023, error.policyYear());
+        assertEquals(DomainFixtures.MASS_TORT_BLOCK_START, error.coverageBlockStart());
+        assertEquals(DomainFixtures.MASS_TORT_BLOCK_END, error.coverageBlockEnd());
+        assertTrue(error.getMessage().contains("2023"));
+        assertTrue(error.getMessage().contains("2024-01-01"));
+        assertTrue(error.getMessage().contains("2028-12-31"));
+        verify(client, never()).createAllocation(any(), any(), any());
+    }
+
+    @Test
+    void aDraftMassTortProfileDoesNotRestrictThePolicyYear() {
+        massTortProfile(DomainFixtures.massTortProfile("DRAFT", null, null));
+        ClaimCommands.Allocation command = allocation(null, 1999);
+        ClaimDetailDtos.Allocation created = DomainFixtures.allocation();
+        when(client.createAllocation(TENANT, CLAIM_ID, command)).thenReturn(created);
+
+        assertSame(created, service.allocate(TENANT, CLAIM_ID, command));
+    }
+
+    @Test
+    void aCompleteMassTortProfileWithoutABlockDoesNotRestrictThePolicyYear() {
+        massTortProfile(DomainFixtures.massTortProfile("COMPLETE", null, null));
+        ClaimCommands.Allocation command = allocation(null, 1999);
+        ClaimDetailDtos.Allocation created = DomainFixtures.allocation();
+        when(client.createAllocation(TENANT, CLAIM_ID, command)).thenReturn(created);
+
+        assertSame(created, service.allocate(TENANT, CLAIM_ID, command));
+    }
+
+    @Test
+    void anEmptyMassTortProfileAllowsTheAllocation() {
+        noMassTortProfile();
+        ClaimCommands.Allocation command = allocation(null, 1999);
+        ClaimDetailDtos.Allocation created = DomainFixtures.allocation();
+        when(client.createAllocation(TENANT, CLAIM_ID, command)).thenReturn(created);
+
+        assertSame(created, service.allocate(TENANT, CLAIM_ID, command));
+    }
+
+    @Test
+    void theMassTortProfileIsFetchedEvenWithoutALimit() {
+        noMassTortProfile();
+        ClaimCommands.Allocation command = allocation(null);
+        ClaimDetailDtos.Allocation created = DomainFixtures.allocation();
+        when(client.createAllocation(TENANT, CLAIM_ID, command)).thenReturn(created);
+
+        service.allocate(TENANT, CLAIM_ID, command);
+
+        verify(massTortClient).findProfile(TENANT, DomainFixtures.POLICY_ID);
+        verifyNoInteractions(policyClient);
+    }
+
+    @Test
     void allocationWithALimitPostsErosionAndRecordsPosted() {
+        noMassTortProfile();
         ClaimCommands.Allocation command = allocation(DomainFixtures.LIMIT_ID);
         ClaimDetailDtos.Allocation created = DomainFixtures.allocationWithLimit();
         ClaimDetailDtos.Allocation posted = DomainFixtures.postedAllocation(null);
@@ -297,6 +390,7 @@ class ClaimDetailServiceTest {
 
     @Test
     void aPolicyErosionFailureIsRecordedOnTheAllocationWithoutFailingTheCreate() {
+        noMassTortProfile();
         ClaimCommands.Allocation command = allocation(DomainFixtures.LIMIT_ID);
         ClaimDetailDtos.Allocation created = DomainFixtures.allocationWithLimit();
         String detail = "The erosion fact would exceed the limit.";
@@ -318,6 +412,7 @@ class ClaimDetailServiceTest {
 
     @Test
     void anUnexpectedPolicyClientFaultIsRecordedAsFailedWithoutFailingTheCreate() {
+        noMassTortProfile();
         ClaimCommands.Allocation command = allocation(DomainFixtures.LIMIT_ID);
         ClaimDetailDtos.Allocation created = DomainFixtures.allocationWithLimit();
         ClaimDetailDtos.Allocation failed = DomainFixtures.failedAllocation("policy offline");
@@ -337,6 +432,7 @@ class ClaimDetailServiceTest {
 
     @Test
     void anExpertErosionUpdateFailureDoesNotFailTheCreate() {
+        noMassTortProfile();
         ClaimCommands.Allocation command = allocation(DomainFixtures.LIMIT_ID);
         ClaimDetailDtos.Allocation created = DomainFixtures.allocationWithLimit();
         when(client.createAllocation(TENANT, CLAIM_ID, command)).thenReturn(created);
@@ -640,8 +736,22 @@ class ClaimDetailServiceTest {
         verify(client).findNotes(TENANT, CLAIM_ID);
     }
 
+    private void noMassTortProfile() {
+        when(massTortClient.findProfile(TENANT, DomainFixtures.POLICY_ID))
+                .thenReturn(Optional.empty());
+    }
+
+    private void massTortProfile(PolicyMassTortClient.MassTortProfile profile) {
+        when(massTortClient.findProfile(TENANT, DomainFixtures.POLICY_ID))
+                .thenReturn(Optional.of(profile));
+    }
+
     private static ClaimCommands.Allocation allocation(UUID limitId) {
-        return new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, 2024, "PRIMARY",
+        return allocation(limitId, 2024);
+    }
+
+    private static ClaimCommands.Allocation allocation(UUID limitId, int policyYear) {
+        return new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, policyYear, "PRIMARY",
                 new BigDecimal("0.25"), new BigDecimal("31250.0000"), limitId);
     }
 

@@ -86,6 +86,15 @@ every other invariant; expert 400/404/409 problem+json responses keep their stat
 detail. Allocation projections use `allocationId` and omit the expert's `tenantId`; money
 and percentages are decimal strings.
 
+Before the expert create, the domain reads the policy's mass-tort profile from
+`GET /api/v1/policies/{policyId}/mass-tort-profile` (same `eia.policy.base-url`) with
+`X-EIA-Tenant` and `X-EIA-Book: DIRECT`. When the profile is `COMPLETE` and both
+coverage-block dates are present, `policyYear` must be between the block start and end
+years inclusive; otherwise the create is a 400 `MASS_TORT_YEAR_OUTSIDE_BLOCK` whose
+message names the year and block. A `DRAFT` profile, an absent profile (404), and an
+unavailable Policy service (5xx or transport failure) all allow the allocation, so the
+profile read never blocks a create by being unavailable.
+
 Allocations expose `limitId`, `erosionStatus` (`NOT_POSTED`, `POSTED`, `FAILED`),
 `erosionMessage`, and `erosionPostedAt`. When a create carries a `limitId`, the domain posts
 an erosion fact to the Policy domain's `POST /api/v1/policies/{policyId}/erosion` with

@@ -57,3 +57,10 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
   with a 404 for an unknown allocation. The Policy base URL is `eia.policy.base-url`
   (default `http://localhost:8084`, `EIA_POLICY_BASE_URL`), and tests cover the no-limit,
   posted, failed, retry, exact header/body/idempotency, and 404 paths.
+- Claim allocation mass-tort coverage block: before the expert create the domain reads
+  `GET /api/v1/policies/{policyId}/mass-tort-profile` with the tenant and DIRECT book from
+  `eia.policy.base-url`. A `COMPLETE` profile with both block dates rejects an allocation
+  whose `policyYear` falls outside the inclusive start/end years with 400
+  `MASS_TORT_YEAR_OUTSIDE_BLOCK`, whose message names the year and block. `DRAFT`, 404,
+  and 5xx/unavailable profiles allow the create. Tests cover inside/outside years, both
+  boundary years, DRAFT, 404, 5xx, and the always-fetch behavior without a limit.
