@@ -2,6 +2,7 @@ package com.eia.directclaims.domain;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -324,12 +325,19 @@ public class ClaimClient {
     }
 
     public ClaimDetailDtos.Task addTask(UUID tenantId, UUID claimId, ClaimCommands.Task command) {
-        return client.post()
-                .uri(uri -> uri.path("/internal/v1/claims/{id}/tasks").build(claimId))
-                .header("X-EIA-Tenant", tenantId.toString())
-                .body(command)
-                .retrieve()
-                .body(ClaimDetailDtos.Task.class);
+        return addTask(tenantId, claimId, command, null).value();
+    }
+
+    /**
+     * Forwards the caller's Idempotency-Key to the expert and reads back the
+     * {@code Idempotent-Replay} header so the domain can preserve it.
+     */
+    public ClaimCommandResult<ClaimDetailDtos.Task> addTask(UUID tenantId,
+                                                            UUID claimId,
+                                                            ClaimCommands.Task command,
+                                                            String idempotencyKey) {
+        return postForCommand("/internal/v1/claims/{id}/tasks", tenantId, claimId, command,
+                ClaimDetailDtos.Task.class, idempotencyKey);
     }
 
     public ClaimDetailDtos.Task changeTaskStatus(UUID tenantId, UUID claimId, UUID taskId,
@@ -354,12 +362,40 @@ public class ClaimClient {
     }
 
     public ClaimDetailDtos.Note addNote(UUID tenantId, UUID claimId, ClaimCommands.Note command) {
-        return client.post()
-                .uri(uri -> uri.path("/internal/v1/claims/{id}/notes").build(claimId))
+        return addNote(tenantId, claimId, command, null).value();
+    }
+
+    /**
+     * Forwards the caller's Idempotency-Key to the expert and reads back the
+     * {@code Idempotent-Replay} header so the domain can preserve it.
+     */
+    public ClaimCommandResult<ClaimDetailDtos.Note> addNote(UUID tenantId,
+                                                            UUID claimId,
+                                                            ClaimCommands.Note command,
+                                                            String idempotencyKey) {
+        return postForCommand("/internal/v1/claims/{id}/notes", tenantId, claimId, command,
+                ClaimDetailDtos.Note.class, idempotencyKey);
+    }
+
+    private <T> ClaimCommandResult<T> postForCommand(String path,
+                                                     UUID tenantId,
+                                                     UUID claimId,
+                                                     Object command,
+                                                     Class<T> responseType,
+                                                     String idempotencyKey) {
+        ResponseEntity<T> response = client.post()
+                .uri(uri -> uri.path(path).build(claimId))
                 .header("X-EIA-Tenant", tenantId.toString())
+                .headers(headers -> {
+                    if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+                        headers.set("Idempotency-Key", idempotencyKey);
+                    }
+                })
                 .body(command)
                 .retrieve()
-                .body(ClaimDetailDtos.Note.class);
+                .toEntity(responseType);
+        return new ClaimCommandResult<>(response.getBody(),
+                response.getHeaders().getFirst("Idempotent-Replay"));
     }
 
     record CreateClaimRequest(

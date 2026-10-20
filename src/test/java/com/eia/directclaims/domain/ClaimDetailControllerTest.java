@@ -37,12 +37,14 @@ import static com.eia.directclaims.domain.DomainFixtures.settlement;
 import static com.eia.directclaims.domain.DomainFixtures.task;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -495,8 +497,8 @@ class ClaimDetailControllerTest {
 
     @Test
     void opensATask() throws Exception {
-        when(service.addTask(eq(TENANT), eq(CLAIM_ID), any(ClaimCommands.Task.class)))
-                .thenReturn(task("OPEN"));
+        when(service.addTask(eq(TENANT), eq(CLAIM_ID), any(ClaimCommands.Task.class), isNull()))
+                .thenReturn(new ClaimCommandResult<>(task("OPEN"), null));
 
         mvc.perform(post(BASE + "/tasks")
                         .header("X-EIA-Tenant", TENANT)
@@ -512,8 +514,31 @@ class ClaimDetailControllerTest {
                                 }
                                 """))
                 .andExpect(status().isCreated())
+                .andExpect(header().doesNotExist("Idempotent-Replay"))
                 .andExpect(jsonPath("$.id").value(TASK_ID.toString()))
                 .andExpect(jsonPath("$.status").value("OPEN"));
+    }
+
+    @Test
+    void opensATaskWithAnIdempotencyKeyAndPreservesTheReplayHeader() throws Exception {
+        when(service.addTask(eq(TENANT), eq(CLAIM_ID), any(ClaimCommands.Task.class),
+                eq("task-key-1"))).thenReturn(new ClaimCommandResult<>(task("OPEN"), "true"));
+
+        mvc.perform(post(BASE + "/tasks")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .header("Idempotency-Key", "task-key-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Obtain updated medical records",
+                                  "dueDate": "2026-04-01",
+                                  "priority": "HIGH"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Idempotent-Replay", "true"))
+                .andExpect(jsonPath("$.id").value(TASK_ID.toString()));
     }
 
     @Test
@@ -563,8 +588,8 @@ class ClaimDetailControllerTest {
 
     @Test
     void addsANote() throws Exception {
-        when(service.addNote(eq(TENANT), eq(CLAIM_ID), any(ClaimCommands.Note.class)))
-                .thenReturn(note());
+        when(service.addNote(eq(TENANT), eq(CLAIM_ID), any(ClaimCommands.Note.class), isNull()))
+                .thenReturn(new ClaimCommandResult<>(note(), null));
 
         mvc.perform(post(BASE + "/notes")
                         .header("X-EIA-Tenant", TENANT)
@@ -578,7 +603,29 @@ class ClaimDetailControllerTest {
                                 }
                                 """))
                 .andExpect(status().isCreated())
+                .andExpect(header().doesNotExist("Idempotent-Replay"))
                 .andExpect(jsonPath("$.noteNumber").value("NTE-2026-0000001"));
+    }
+
+    @Test
+    void appendsANoteWithAnIdempotencyKeyAndPreservesTheReplayHeader() throws Exception {
+        when(service.addNote(eq(TENANT), eq(CLAIM_ID), any(ClaimCommands.Note.class),
+                eq("note-key-1"))).thenReturn(new ClaimCommandResult<>(note(), "false"));
+
+        mvc.perform(post(BASE + "/notes")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .header("Idempotency-Key", "note-key-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "noteType": "DIARY",
+                                  "body": "Called the claimant to confirm the medical authorization",
+                                  "author": "Dana Handler"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Idempotent-Replay", "false"));
     }
 
     @Test
@@ -628,7 +675,7 @@ class ClaimDetailControllerTest {
 
     @Test
     void expertBadRequestOnANoteIsPreservedAs400() throws Exception {
-        when(service.addNote(eq(TENANT), eq(CLAIM_ID), any(ClaimCommands.Note.class)))
+        when(service.addNote(eq(TENANT), eq(CLAIM_ID), any(ClaimCommands.Note.class), isNull()))
                 .thenThrow(expertProblem(400, "VALIDATION_ERROR", "noteType is required"));
 
         mvc.perform(post(BASE + "/notes")
@@ -639,6 +686,26 @@ class ClaimDetailControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
                 .andExpect(jsonPath("$.message").value("noteType is required"));
+    }
+
+    @Test
+    void expertIdempotencyKeyReuseIsPreservedAs409() throws Exception {
+        when(service.addNote(eq(TENANT), eq(CLAIM_ID), any(ClaimCommands.Note.class),
+                eq("used-key"))).thenThrow(expertProblem(409, "EIA-DIR-4091",
+                        "Idempotency-Key was already used with a different request."));
+
+        mvc.perform(post(BASE + "/notes")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .header("Idempotency-Key", "used-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"noteType\": \"DIARY\", \"body\": \"Body\", \"author\": \"Author\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.code").value("EIA-DIR-4091"))
+                .andExpect(jsonPath("$.category").value("IDEMPOTENCY_KEY_REUSED"))
+                .andExpect(jsonPath("$.message").value(
+                        "Idempotency-Key was already used with a different request."));
     }
 
     private static RestClientResponseException expertProblem(int status, String code, String detail) {

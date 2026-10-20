@@ -59,6 +59,10 @@ book returns 404, never 403):
 empty tab. Money is a decimal string on every route. Task writes carry the task `version`
 observed by the caller and return 409 when it is stale; notes are append-only. Expert
 problems keep their 400/404/409 status and detail, rendered as `application/problem+json`.
+The task and note create routes also accept an optional `Idempotency-Key`, forward it to the
+expert, and preserve the expert's `Idempotent-Replay` response header. A same-body replay is
+201 with `Idempotent-Replay: true`; a different body under the same key is 409 with code
+`EIA-DIR-4091` and category `IDEMPOTENCY_KEY_REUSED`.
 
 `GET /api/v1/claims/search` matches `claimNumber`, `claimType`, `causeCode`, and `policyId`
 case-insensitively for the caller's tenant and the DIRECT book. A blank `q` returns the latest

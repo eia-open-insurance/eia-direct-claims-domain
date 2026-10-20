@@ -2,6 +2,7 @@ package com.eia.directclaims.domain;
 
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -287,14 +288,20 @@ public class ClaimDetailController {
     }
 
     @PostMapping("/tasks")
-    @ResponseStatus(HttpStatus.CREATED)
-    public ClaimDetailDtos.Task addTask(
+    public ResponseEntity<ClaimDetailDtos.Task> addTask(
             @RequestHeader(value = "X-EIA-Tenant", required = false) String tenantHeader,
             @RequestHeader(value = "X-EIA-Book", required = false) String book,
             @PathVariable UUID claimId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody ClaimCommands.Task command) {
         RequestGuard.requireDirectBook(book);
-        return service.addTask(RequestGuard.requireTenant(tenantHeader), claimId, command);
+        ClaimCommandResult<ClaimDetailDtos.Task> result = service.addTask(
+                RequestGuard.requireTenant(tenantHeader), claimId, command, idempotencyKey);
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(HttpStatus.CREATED);
+        if (result.replayHeader() != null) {
+            response.header("Idempotent-Replay", result.replayHeader());
+        }
+        return response.body(result.value());
     }
 
     @PatchMapping("/tasks/{taskId}")
@@ -320,13 +327,19 @@ public class ClaimDetailController {
     }
 
     @PostMapping("/notes")
-    @ResponseStatus(HttpStatus.CREATED)
-    public ClaimDetailDtos.Note addNote(
+    public ResponseEntity<ClaimDetailDtos.Note> addNote(
             @RequestHeader(value = "X-EIA-Tenant", required = false) String tenantHeader,
             @RequestHeader(value = "X-EIA-Book", required = false) String book,
             @PathVariable UUID claimId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody ClaimCommands.Note command) {
         RequestGuard.requireDirectBook(book);
-        return service.addNote(RequestGuard.requireTenant(tenantHeader), claimId, command);
+        ClaimCommandResult<ClaimDetailDtos.Note> result = service.addNote(
+                RequestGuard.requireTenant(tenantHeader), claimId, command, idempotencyKey);
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(HttpStatus.CREATED);
+        if (result.replayHeader() != null) {
+            response.header("Idempotent-Replay", result.replayHeader());
+        }
+        return response.body(result.value());
     }
 }

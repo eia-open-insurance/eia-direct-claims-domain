@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -338,6 +339,17 @@ class ClaimDetailServiceTest {
     }
 
     @Test
+    void taskForwardsTheIdempotencyKeyAndPreservesTheReplayHeader() {
+        ClaimCommands.Task command = new ClaimCommands.Task("Obtain records", "Provider records",
+                LocalDate.of(2026, 4, 1), "high", "A. Adjuster");
+        ClaimDetailDtos.Task created = DomainFixtures.task("OPEN");
+        ClaimCommandResult<ClaimDetailDtos.Task> forwarded = new ClaimCommandResult<>(created, "true");
+        when(client.addTask(TENANT, CLAIM_ID, command, "task-key-1")).thenReturn(forwarded);
+
+        assertSame(forwarded, service.addTask(TENANT, CLAIM_ID, command, "task-key-1"));
+    }
+
+    @Test
     void taskStatusRequiresStatusAndVersion() {
         assertThrows(DomainValidationException.class, () -> service.changeTaskStatus(TENANT, CLAIM_ID,
                 DomainFixtures.TASK_ID, new ClaimCommands.TaskStatusChange(null, 1L)));
@@ -395,6 +407,16 @@ class ClaimDetailServiceTest {
         when(client.addNote(TENANT, CLAIM_ID, command)).thenReturn(created);
 
         assertEquals(created, service.addNote(TENANT, CLAIM_ID, command));
+    }
+
+    @Test
+    void noteForwardsTheIdempotencyKeyAndPreservesTheReplayHeader() {
+        ClaimCommands.Note command = new ClaimCommands.Note("DIARY", "Called the claimant", "Dana");
+        ClaimDetailDtos.Note created = DomainFixtures.note();
+        ClaimCommandResult<ClaimDetailDtos.Note> forwarded = new ClaimCommandResult<>(created, "false");
+        when(client.addNote(TENANT, CLAIM_ID, command, "note-key-1")).thenReturn(forwarded);
+
+        assertSame(forwarded, service.addNote(TENANT, CLAIM_ID, command, "note-key-1"));
     }
 
     @Test

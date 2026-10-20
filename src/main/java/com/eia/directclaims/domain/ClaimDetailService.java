@@ -249,13 +249,29 @@ public class ClaimDetailService {
     }
 
     public ClaimDetailDtos.Task addTask(UUID tenantId, UUID claimId, ClaimCommands.Task command) {
+        validateTask(command);
+        return client.addTask(tenantId, claimId, command);
+    }
+
+    /**
+     * Forwards the optional Idempotency-Key and keeps the expert's replay
+     * marker so the controller can return it to the caller.
+     */
+    public ClaimCommandResult<ClaimDetailDtos.Task> addTask(UUID tenantId,
+                                                            UUID claimId,
+                                                            ClaimCommands.Task command,
+                                                            String idempotencyKey) {
+        validateTask(command);
+        return client.addTask(tenantId, claimId, command, idempotencyKey);
+    }
+
+    private static void validateTask(ClaimCommands.Task command) {
         requireText(command.title(), "title");
         requireDate(command.dueDate(), "dueDate");
         String priority = requireText(command.priority(), "priority");
         if (!TASK_PRIORITIES.contains(priority.toUpperCase(Locale.ROOT))) {
             throw new DomainValidationException("Unknown priority: " + command.priority());
         }
-        return client.addTask(tenantId, claimId, command);
     }
 
     public ClaimDetailDtos.Task changeTaskStatus(UUID tenantId, UUID claimId, UUID taskId,
@@ -276,13 +292,29 @@ public class ClaimDetailService {
     }
 
     public ClaimDetailDtos.Note addNote(UUID tenantId, UUID claimId, ClaimCommands.Note command) {
+        validateNote(command);
+        return client.addNote(tenantId, claimId, command);
+    }
+
+    /**
+     * Forwards the optional Idempotency-Key and keeps the expert's replay
+     * marker so the controller can return it to the caller.
+     */
+    public ClaimCommandResult<ClaimDetailDtos.Note> addNote(UUID tenantId,
+                                                            UUID claimId,
+                                                            ClaimCommands.Note command,
+                                                            String idempotencyKey) {
+        validateNote(command);
+        return client.addNote(tenantId, claimId, command, idempotencyKey);
+    }
+
+    private static void validateNote(ClaimCommands.Note command) {
         String noteType = requireText(command.noteType(), "noteType");
         if (!NOTE_TYPES.contains(noteType.toUpperCase(Locale.ROOT))) {
             throw new DomainValidationException("Unknown noteType: " + command.noteType());
         }
         requireText(command.body(), "body");
         requireText(command.author(), "author");
-        return client.addNote(tenantId, claimId, command);
     }
 
     // ------------------------------------------------------------------ helpers

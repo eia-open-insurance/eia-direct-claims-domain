@@ -85,6 +85,12 @@ public class ApiExceptionHandler {
                     detail == null ? "The claims expert rejected the request" : detail, request, null);
         }
         if (upstream == 409) {
+            if ("EIA-DIR-4091".equals(expertCode(ex))) {
+                return error(HttpStatus.CONFLICT, "EIA-DIR-4091",
+                        detail == null ? "Idempotency-Key was already used with a different request."
+                                : detail,
+                        request, null, "IDEMPOTENCY_KEY_REUSED");
+            }
             return error(HttpStatus.CONFLICT, "CONFLICT",
                     detail == null ? "The claim was modified concurrently; reload and retry" : detail,
                     request, null);
@@ -124,6 +130,21 @@ public class ApiExceptionHandler {
         return null;
     }
 
+    /** Reads the stable expert error code so contract-specific problems survive. */
+    private String expertCode(RestClientResponseException ex) {
+        String body = ex.getResponseBodyAsString();
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode problem = objectMapper.readTree(body);
+            JsonNode code = problem.get("code");
+            return code != null && code.isTextual() ? code.asText() : null;
+        } catch (JsonProcessingException ignored) {
+            return null;
+        }
+    }
+
     private FieldViolation toViolation(FieldError fieldError) {
         return new FieldViolation(fieldError.getField(), fieldError.getDefaultMessage());
     }
@@ -133,7 +154,17 @@ public class ApiExceptionHandler {
                                                   String message,
                                                   HttpServletRequest request,
                                                   List<FieldViolation> details) {
-        ApiError body = ApiError.of(status.value(), code, message, request.getRequestURI(), details);
+        return error(status, code, message, request, details, null);
+    }
+
+    private static ResponseEntity<ApiError> error(HttpStatus status,
+                                                  String code,
+                                                  String message,
+                                                  HttpServletRequest request,
+                                                  List<FieldViolation> details,
+                                                  String category) {
+        ApiError body = ApiError.of(status.value(), code, message, request.getRequestURI(), details,
+                category);
         return ResponseEntity.status(status)
                 .contentType(MediaType.APPLICATION_PROBLEM_JSON)
                 .body(body);

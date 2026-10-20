@@ -140,6 +140,26 @@ class ClaimClientTest {
     }
 
     @Test
+    void addTaskForwardsTheIdempotencyKeyAndReadsTheReplayHeader() {
+        server.expect(requestTo(TASK_URL))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Idempotency-Key", "task-key-1"))
+                .andRespond(withStatus(HttpStatus.CREATED)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Idempotent-Replay", "true")
+                        .body(TASK_JSON));
+
+        ClaimCommandResult<ClaimDetailDtos.Task> result = client.addTask(TENANT, CLAIM_ID,
+                new ClaimCommands.Task("Obtain updated medical records",
+                        "Provider records requested at FNOL", LocalDate.of(2026, 4, 1), "HIGH",
+                        "A. Adjuster"), "task-key-1");
+
+        assertEquals(TASK_ID, result.value().id());
+        assertEquals("true", result.replayHeader());
+        server.verify();
+    }
+
+    @Test
     void changeTaskStatusPatchesStatusAndVersion() {
         server.expect(requestTo(TASK_URL + "/" + TASK_ID))
                 .andExpect(method(HttpMethod.PATCH))
@@ -203,6 +223,26 @@ class ClaimClientTest {
 
         assertEquals(NOTE_ID, note.id());
         assertEquals("DIARY", note.noteType());
+        server.verify();
+    }
+
+    @Test
+    void addNoteForwardsTheIdempotencyKeyAndReadsTheReplayHeader() {
+        server.expect(requestTo(NOTE_URL))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Idempotency-Key", "note-key-1"))
+                .andRespond(withStatus(HttpStatus.CREATED)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Idempotent-Replay", "false")
+                        .body(NOTE_JSON));
+
+        ClaimCommandResult<ClaimDetailDtos.Note> result = client.addNote(TENANT, CLAIM_ID,
+                new ClaimCommands.Note("DIARY",
+                        "Called the claimant to confirm the medical authorization", "Dana Handler"),
+                "note-key-1");
+
+        assertEquals(NOTE_ID, result.value().id());
+        assertEquals("false", result.replayHeader());
         server.verify();
     }
 
