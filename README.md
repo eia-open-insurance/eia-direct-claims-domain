@@ -38,6 +38,7 @@ Public endpoints (all require `X-EIA-Tenant` and `X-EIA-Book: DIRECT`; any other
 book returns 404, never 403):
 
 - `GET /api/v1/claims?status={status}`
+- `GET /api/v1/claims/search?q={term}&limit=10`
 - `GET /api/v1/claims/{id}`
 - `POST /api/v1/claims`
 - `PATCH /api/v1/claims/{id}/status`
@@ -54,6 +55,11 @@ book returns 404, never 403):
 
 `GET /{id}/coverage` returns 404 until a decision is recorded, so the workbench can show an
 empty tab. Money is a decimal string on every route.
+
+`GET /api/v1/claims/search` matches `claimNumber`, `claimType`, `causeCode`, and `policyId`
+case-insensitively for the caller's tenant and the DIRECT book. A blank `q` returns the latest
+records by `updatedAt`; `limit` defaults to 10 and is capped at 25. The domain owns no tables, so
+the projection is built from the existing tenant-scoped expert list.
 
 ## Verification
 

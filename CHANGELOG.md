@@ -18,3 +18,6 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
   recoveries, liens, and claim closure. Domain-side validation covers required fields,
   money, exposure dates against the report date, coverage positions, trial dates, and lien
   resolutions; the expert remains authoritative for the invariants.
+- Common search at `GET /api/v1/claims/search?q={term}&limit=10`: tenant- and DIRECT-book-scoped
+  matching over `claimNumber`, `claimType`, `causeCode`, and `policyId`, latest-by-`updatedAt`
+  results for a blank query, and a limit capped at 25.

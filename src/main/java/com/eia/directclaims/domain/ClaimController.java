@@ -33,6 +33,15 @@ public class ClaimController {
         return service.list(RequestGuard.requireTenant(tenantHeader), status);
     }
 
+    @GetMapping("/search")
+    public ClaimSearchResponse search(@RequestHeader(value = "X-EIA-Tenant", required = false) String tenantHeader,
+                                      @RequestHeader(value = "X-EIA-Book", required = false) String book,
+                                      @RequestParam(value = "q", required = false, defaultValue = "") String query,
+                                      @RequestParam(value = "limit", defaultValue = "10") int limit) {
+        RequestGuard.requireDirectBook(book);
+        return service.search(RequestGuard.requireTenant(tenantHeader), query, limit);
+    }
+
     @GetMapping("/{id}")
     public ClaimDto get(@RequestHeader(value = "X-EIA-Tenant", required = false) String tenantHeader,
                         @RequestHeader(value = "X-EIA-Book", required = false) String book,
