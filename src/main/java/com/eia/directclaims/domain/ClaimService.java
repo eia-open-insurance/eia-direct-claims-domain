@@ -87,6 +87,15 @@ public class ClaimService {
     }
 
     /**
+     * Assigns or reassigns the claim at the version the caller observed. The
+     * expert owns the optimistic concurrency check, so a stale version surfaces
+     * as the expert's 409 problem instead of overwriting a concurrent change.
+     */
+    public ClaimDto assign(UUID tenantId, UUID claimId, ClaimCommands.Assignment command, String actor) {
+        return client.assign(tenantId, claimId, command, actor);
+    }
+
+    /**
      * Closure is a transaction in SPEC §11.4.10. The expert enforces the
      * closure criteria (unresolved lien, open reserve, legal transition).
      */

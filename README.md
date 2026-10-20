@@ -43,6 +43,7 @@ book returns 404, never 403):
 - `POST /api/v1/claims`
 - `PATCH /api/v1/claims/{id}/status`
 - `POST /api/v1/claims/{id}/close`
+- `PATCH /api/v1/claims/{claimId}/assignment`
 - `GET|POST /api/v1/claims/{id}/injuries`, `PATCH /api/v1/claims/{id}/injuries/{injuryId}`
 - `GET|POST /api/v1/claims/{id}/exposures`, `PATCH /api/v1/claims/{id}/exposures/{exposureId}`
 - `GET|POST /api/v1/claims/{id}/reserves`
@@ -63,6 +64,13 @@ The task and note create routes also accept an optional `Idempotency-Key`, forwa
 expert, and preserve the expert's `Idempotent-Replay` response header. A same-body replay is
 201 with `Idempotent-Replay: true`; a different body under the same key is 409 with code
 `EIA-DIR-4091` and category `IDEMPOTENCY_KEY_REUSED`.
+
+`PATCH /api/v1/claims/{claimId}/assignment` assigns or reassigns a claim to an adjuster and,
+optionally, a team at the claim `version` the caller observed. The domain forwards the tenant,
+the DIRECT book, the optional `X-EIA-Actor` header, and the exact
+`{assignedAdjuster, assignedTeam, expectedVersion}` payload to the expert; a stale version is
+preserved as the expert's 409 problem+json. Claim responses expose `assignedAdjuster`,
+`assignedTeam`, and `assignedAt`.
 
 `GET /api/v1/claims/search` matches `claimNumber`, `claimType`, `causeCode`, and `policyId`
 case-insensitively for the caller's tenant and the DIRECT book. A blank `q` returns the latest

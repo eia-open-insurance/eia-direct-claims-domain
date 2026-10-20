@@ -32,7 +32,15 @@ final class DomainFixtures {
         return new ClaimDto(CLAIM_ID, TENANT, "DIRECT", "CLM-2026-0000001", POLICY_ID, CLAIMANT_ID,
                 "BODILY_INJURY", status, LocalDate.of(2026, 3, 14), LocalDate.of(2026, 3, 18), "GL",
                 new BigDecimal("125000.0000"), "USD", new BigDecimal("500000.0000"), "USD", false,
-                new BigDecimal("125000.0000"), version, NOW, NOW);
+                null, null, null, new BigDecimal("125000.0000"), version, NOW, NOW);
+    }
+
+    static ClaimDto assignedClaim(String status, int version) {
+        return new ClaimDto(CLAIM_ID, TENANT, "DIRECT", "CLM-2026-0000001", POLICY_ID, CLAIMANT_ID,
+                "BODILY_INJURY", status, LocalDate.of(2026, 3, 14), LocalDate.of(2026, 3, 18), "GL",
+                new BigDecimal("125000.0000"), "USD", new BigDecimal("500000.0000"), "USD", false,
+                "adjuster@example.com", "CASUALTY", NOW, new BigDecimal("125000.0000"), version,
+                NOW, NOW);
     }
 
     static ClaimDetailDtos.Injury injury() {

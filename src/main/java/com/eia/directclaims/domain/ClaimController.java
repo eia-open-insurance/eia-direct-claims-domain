@@ -59,6 +59,16 @@ public class ClaimController {
         return service.create(RequestGuard.requireTenant(tenantHeader), command);
     }
 
+    @PatchMapping("/{claimId}/assignment")
+    public ClaimDto assign(@RequestHeader(value = "X-EIA-Tenant", required = false) String tenantHeader,
+                           @RequestHeader(value = "X-EIA-Book", required = false) String book,
+                           @RequestHeader(value = "X-EIA-Actor", required = false) String actor,
+                           @PathVariable UUID claimId,
+                           @Valid @RequestBody ClaimCommands.Assignment command) {
+        RequestGuard.requireDirectBook(book);
+        return service.assign(RequestGuard.requireTenant(tenantHeader), claimId, command, actor);
+    }
+
     @PatchMapping("/{id}/status")
     public ClaimDto changeStatus(@RequestHeader(value = "X-EIA-Tenant", required = false) String tenantHeader,
                                  @RequestHeader(value = "X-EIA-Book", required = false) String book,

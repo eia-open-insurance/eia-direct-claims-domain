@@ -1,5 +1,9 @@
 package com.eia.directclaims.domain;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -143,6 +147,24 @@ public final class ClaimCommands {
             String noteType,
             String body,
             String author
+    ) {
+    }
+
+    /**
+     * Command to assign or reassign a claim to an adjuster and, optionally, a
+     * team. The expert owns the optimistic concurrency check: a stale
+     * {@code expectedVersion} is a 409, never an overwrite.
+     */
+    public record Assignment(
+            @NotBlank(message = "assignedAdjuster is required")
+            @Size(max = 128, message = "assignedAdjuster must be at most 128 characters")
+            String assignedAdjuster,
+
+            @Size(max = 64, message = "assignedTeam must be at most 64 characters")
+            String assignedTeam,
+
+            @NotNull(message = "expectedVersion is required")
+            Integer expectedVersion
     ) {
     }
 

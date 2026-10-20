@@ -29,3 +29,8 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
 - Optional `Idempotency-Key` forwarding on the task and note create routes. The domain passes
   the header to the expert and preserves `Idempotent-Replay` on the public response; expert
   409 `EIA-DIR-4091` / `IDEMPOTENCY_KEY_REUSED` problems keep their code and category.
+- Claim assignment: `PATCH /api/v1/claims/{claimId}/assignment` forwards
+  `{assignedAdjuster, assignedTeam, expectedVersion}` with the tenant, DIRECT book, and the
+  optional `X-EIA-Actor` header. `ClaimDto` exposes `assignedAdjuster`, `assignedTeam`, and
+  `assignedAt`; the expert's 400/404/409 problem+json responses are preserved, including a
+  stale-version 409.

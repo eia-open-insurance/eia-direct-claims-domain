@@ -133,6 +133,32 @@ class ClaimServiceTest {
         verify(client).close(TENANT, CLAIM_ID, 5);
     }
 
+    @Test
+    void assignmentDelegatesToTheExpertWithTheActor() {
+        ClaimCommands.Assignment command = new ClaimCommands.Assignment(
+                "adjuster@example.com", "CASUALTY", 3);
+        ClaimDto assigned = assignedDto("REGISTERED", 4);
+        when(client.assign(TENANT, CLAIM_ID, command, "supervisor@example.com")).thenReturn(assigned);
+
+        ClaimDto result = service.assign(TENANT, CLAIM_ID, command, "supervisor@example.com");
+
+        assertSame(assigned, result);
+        assertEquals("adjuster@example.com", result.assignedAdjuster());
+        assertEquals("CASUALTY", result.assignedTeam());
+        verify(client).assign(TENANT, CLAIM_ID, command, "supervisor@example.com");
+    }
+
+    @Test
+    void assignmentWithoutAnActorStillDelegates() {
+        ClaimCommands.Assignment command = new ClaimCommands.Assignment(
+                "adjuster@example.com", null, 0);
+        when(client.assign(TENANT, CLAIM_ID, command, null)).thenReturn(assignedDto("REGISTERED", 1));
+
+        service.assign(TENANT, CLAIM_ID, command, null);
+
+        verify(client).assign(TENANT, CLAIM_ID, command, null);
+    }
+
     private static CreateClaimCommand command(LocalDate reportDate, BigDecimal reserve) {
         return new CreateClaimCommand(POLICY_ID, CLAIMANT_ID, LOSS_DATE, reportDate,
                 "GL", null, reserve, "USD", null, null);
@@ -156,6 +182,36 @@ class ClaimServiceTest {
                 new BigDecimal("500000.0000"),
                 "USD",
                 false,
+                null,
+                null,
+                null,
+                new BigDecimal("125000.0000"),
+                version,
+                Instant.parse("2026-03-18T09:00:00Z"),
+                Instant.parse("2026-03-18T09:00:00Z"));
+    }
+
+    private static ClaimDto assignedDto(String status, int version) {
+        return new ClaimDto(
+                CLAIM_ID,
+                TENANT,
+                "DIRECT",
+                "CLM-2026-0000001",
+                POLICY_ID,
+                CLAIMANT_ID,
+                "BODILY_INJURY",
+                status,
+                LOSS_DATE,
+                REPORT_DATE,
+                "GL",
+                new BigDecimal("125000.0000"),
+                "USD",
+                new BigDecimal("500000.0000"),
+                "USD",
+                false,
+                "adjuster@example.com",
+                "CASUALTY",
+                Instant.parse("2026-03-18T09:00:00Z"),
                 new BigDecimal("125000.0000"),
                 version,
                 Instant.parse("2026-03-18T09:00:00Z"),

@@ -37,6 +37,35 @@ class ClaimClientTest {
     private static final String EXPERT = "http://expert.test";
     private static final String TASK_URL = EXPERT + "/internal/v1/claims/" + CLAIM_ID + "/tasks";
     private static final String NOTE_URL = EXPERT + "/internal/v1/claims/" + CLAIM_ID + "/notes";
+    private static final String ASSIGN_URL = EXPERT + "/internal/v1/claims/" + CLAIM_ID + "/assignment";
+
+    private static final String CLAIM_JSON = """
+            {
+              "id": "0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d21",
+              "tenantId": "11111111-1111-7111-8111-111111111111",
+              "businessBook": "DIRECT",
+              "claimNumber": "CLM-2026-0000001",
+              "policyId": "22222222-2222-7222-8222-222222222222",
+              "claimantPartyId": "33333333-3333-7333-8333-333333333333",
+              "claimType": "BODILY_INJURY",
+              "status": "REGISTERED",
+              "lossDate": "2026-03-14",
+              "reportDate": "2026-03-18",
+              "causeCode": "GL",
+              "reserveAmount": "125000.0000",
+              "reserveCurrency": "USD",
+              "settlementAuthorityAmount": "500000.0000",
+              "settlementAuthorityCurrency": "USD",
+              "litigationFlag": false,
+              "assignedAdjuster": "adjuster@example.com",
+              "assignedTeam": "CASUALTY",
+              "assignedAt": "2026-03-18T09:00:00Z",
+              "currentReserveAmount": "125000.0000",
+              "version": 4,
+              "createdAt": "2026-03-18T09:00:00Z",
+              "updatedAt": "2026-03-18T10:00:00Z"
+            }
+            """;
 
     private static final String TASK_JSON = """
             {
@@ -243,6 +272,91 @@ class ClaimClientTest {
 
         assertEquals(NOTE_ID, result.value().id());
         assertEquals("false", result.replayHeader());
+        server.verify();
+    }
+
+    @Test
+    void assignPatchesThePayloadAndForwardsTheActor() {
+        server.expect(requestTo(ASSIGN_URL))
+                .andExpect(method(HttpMethod.PATCH))
+                .andExpect(header("X-EIA-Tenant", TENANT.toString()))
+                .andExpect(header("X-EIA-Book", "DIRECT"))
+                .andExpect(header("X-EIA-Actor", "supervisor@example.com"))
+                .andExpect(content().json("""
+                        {
+                          "assignedAdjuster": "adjuster@example.com",
+                          "assignedTeam": "CASUALTY",
+                          "expectedVersion": 3
+                        }
+                        """, JsonCompareMode.STRICT))
+                .andRespond(withSuccess(CLAIM_JSON, MediaType.APPLICATION_JSON));
+
+        ClaimDto claim = client.assign(TENANT, CLAIM_ID, new ClaimCommands.Assignment(
+                "adjuster@example.com", "CASUALTY", 3), "supervisor@example.com");
+
+        assertEquals(CLAIM_ID, claim.id());
+        assertEquals("adjuster@example.com", claim.assignedAdjuster());
+        assertEquals("CASUALTY", claim.assignedTeam());
+        assertEquals("2026-03-18T09:00:00Z", claim.assignedAt().toString());
+        assertEquals(4, claim.version());
+        server.verify();
+    }
+
+    @Test
+    void assignOmitsTheActorHeaderWhenNoneIsSupplied() {
+        server.expect(requestTo(ASSIGN_URL))
+                .andExpect(method(HttpMethod.PATCH))
+                .andExpect(request -> assertNull(request.getHeaders().getFirst("X-EIA-Actor")))
+                .andRespond(withSuccess(CLAIM_JSON, MediaType.APPLICATION_JSON));
+
+        ClaimDto claim = client.assign(TENANT, CLAIM_ID, new ClaimCommands.Assignment(
+                "adjuster@example.com", null, 3), null);
+
+        assertEquals("adjuster@example.com", claim.assignedAdjuster());
+        server.verify();
+    }
+
+    @Test
+    void propagatesAnExpertConflictForAssignment() {
+        server.expect(requestTo(ASSIGN_URL))
+                .andRespond(withStatus(HttpStatus.CONFLICT)
+                        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                        .body("""
+                                {
+                                  "type": "about:blank",
+                                  "title": "Conflict",
+                                  "status": 409,
+                                  "detail": "Claim version 2 does not match current version 3",
+                                  "code": "CONFLICT"
+                                }
+                                """));
+
+        RestClientResponseException error = assertThrows(RestClientResponseException.class,
+                () -> client.assign(TENANT, CLAIM_ID, new ClaimCommands.Assignment(
+                        "adjuster@example.com", "CASUALTY", 2), null));
+
+        assertEquals(409, error.getStatusCode().value());
+        assertTrue(error.getResponseBodyAsString().contains("does not match current version 3"));
+        server.verify();
+    }
+
+    @Test
+    void propagatesAnExpertValidationProblemForAssignment() {
+        server.expect(requestTo(ASSIGN_URL))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST)
+                        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                        .body("""
+                                {"title": "Validation failed", "status": 400,
+                                 "detail": "assignedAdjuster must be at most 128 characters",
+                                 "code": "VALIDATION_ERROR"}
+                                """));
+
+        RestClientResponseException error = assertThrows(RestClientResponseException.class,
+                () -> client.assign(TENANT, CLAIM_ID, new ClaimCommands.Assignment(
+                        "adjuster@example.com", null, 3), null));
+
+        assertEquals(400, error.getStatusCode().value());
+        assertTrue(error.getResponseBodyAsString().contains("at most 128 characters"));
         server.verify();
     }
 

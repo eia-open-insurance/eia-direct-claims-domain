@@ -73,6 +73,27 @@ public class ClaimClient {
                 .body(ClaimDto.class);
     }
 
+    /**
+     * Assigns the claim at the version the caller observed. The DIRECT book is
+     * a client-wide default header; the optional actor is forwarded only when
+     * the caller supplied one. The expert keeps ownership of the 400/404/409
+     * problem it returns.
+     */
+    public ClaimDto assign(UUID tenantId, UUID claimId, ClaimCommands.Assignment command, String actor) {
+        return client.patch()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/assignment").build(claimId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .headers(headers -> {
+                    if (actor != null && !actor.isBlank()) {
+                        headers.set("X-EIA-Actor", actor.trim());
+                    }
+                })
+                .body(new AssignmentRequest(command.assignedAdjuster(), command.assignedTeam(),
+                        command.expectedVersion()))
+                .retrieve()
+                .body(ClaimDto.class);
+    }
+
     // ------------------------------------------------------------------ injuries
     public List<ClaimDetailDtos.Injury> findInjuries(UUID tenantId, UUID claimId) {
         return client.get()
@@ -417,5 +438,8 @@ public class ClaimClient {
     }
 
     record CloseClaimRequest(Integer expectedVersion) {
+    }
+
+    record AssignmentRequest(String assignedAdjuster, String assignedTeam, Integer expectedVersion) {
     }
 }
