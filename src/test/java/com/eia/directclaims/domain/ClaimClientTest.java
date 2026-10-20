@@ -21,6 +21,7 @@ import java.util.List;
 import static com.eia.directclaims.domain.DomainFixtures.ALLOCATION_ID;
 import static com.eia.directclaims.domain.DomainFixtures.CLAIMANT_ID;
 import static com.eia.directclaims.domain.DomainFixtures.CLAIM_ID;
+import static com.eia.directclaims.domain.DomainFixtures.LIMIT_ID;
 import static com.eia.directclaims.domain.DomainFixtures.NOTE_ID;
 import static com.eia.directclaims.domain.DomainFixtures.POLICY_ID;
 import static com.eia.directclaims.domain.DomainFixtures.TASK_ID;
@@ -111,13 +112,33 @@ class ClaimClientTest {
               "tenantId": "11111111-1111-7111-8111-111111111111",
               "claimId": "0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d21",
               "policyId": "22222222-2222-7222-8222-222222222222",
+              "limitId": null,
               "policyYear": 2024,
               "layer": "PRIMARY",
               "allocationPct": "0.250000",
               "allocatedAmount": "31250.0000",
+              "erosionStatus": "NOT_POSTED",
+              "erosionMessage": null,
+              "erosionPostedAt": null,
               "createdAt": "2026-03-18T09:00:00Z"
             }
             """;
+
+    private static final String POSTED_ALLOCATION_JSON = ALLOCATION_JSON
+            .replace("\"limitId\": null",
+                    "\"limitId\": \"66666666-6666-7666-8666-666666666666\"")
+            .replace("\"erosionStatus\": \"NOT_POSTED\"", "\"erosionStatus\": \"POSTED\"")
+            .replace("\"erosionMessage\": null",
+                    "\"erosionMessage\": \"limit-erosion-2026-0001\"")
+            .replace("\"erosionPostedAt\": null",
+                    "\"erosionPostedAt\": \"2026-03-18T09:05:00Z\"");
+
+    private static final String FAILED_ALLOCATION_JSON = ALLOCATION_JSON
+            .replace("\"limitId\": null",
+                    "\"limitId\": \"66666666-6666-7666-8666-666666666666\"")
+            .replace("\"erosionStatus\": \"NOT_POSTED\"", "\"erosionStatus\": \"FAILED\"")
+            .replace("\"erosionMessage\": null",
+                    "\"erosionMessage\": \"limit service unavailable\"");
 
     private static final String ALLOCATION_SUMMARY_JSON = """
             {
@@ -126,6 +147,14 @@ class ClaimClientTest {
               "totalAmount": "31250.0000"
             }
             """.formatted(ALLOCATION_JSON);
+
+    private static final String POSTED_ALLOCATION_SUMMARY_JSON = """
+            {
+              "items": [%s],
+              "totalPct": "0.250000",
+              "totalAmount": "31250.0000"
+            }
+            """.formatted(POSTED_ALLOCATION_JSON);
 
     private MockRestServiceServer server;
     private ClaimClient client;
@@ -513,13 +542,33 @@ class ClaimClientTest {
         assertEquals(ALLOCATION_ID, allocation.allocationId());
         assertEquals(CLAIM_ID, allocation.claimId());
         assertEquals(POLICY_ID, allocation.policyId());
+        assertNull(allocation.limitId());
         assertEquals(2024, allocation.policyYear());
         assertEquals("PRIMARY", allocation.layer());
         assertEquals(0, new BigDecimal("0.250000").compareTo(allocation.allocationPct()));
         assertEquals(0, new BigDecimal("31250.0000").compareTo(allocation.allocatedAmount()));
+        assertEquals("NOT_POSTED", allocation.erosionStatus());
+        assertNull(allocation.erosionMessage());
+        assertNull(allocation.erosionPostedAt());
         assertEquals("2026-03-18T09:00:00Z", allocation.createdAt().toString());
         assertEquals(0, new BigDecimal("0.250000").compareTo(summary.totalPct()));
         assertEquals(0, new BigDecimal("31250.0000").compareTo(summary.totalAmount()));
+        server.verify();
+    }
+
+    @Test
+    void findAllocationsMapsTheOptionalLimitAndPostedErosionState() {
+        server.expect(requestTo(ALLOCATION_URL + "?tenantId=" + TENANT))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(POSTED_ALLOCATION_SUMMARY_JSON, MediaType.APPLICATION_JSON));
+
+        ClaimDetailDtos.Allocation allocation = client.findAllocations(TENANT, CLAIM_ID)
+                .items().getFirst();
+
+        assertEquals(LIMIT_ID, allocation.limitId());
+        assertEquals("POSTED", allocation.erosionStatus());
+        assertEquals("limit-erosion-2026-0001", allocation.erosionMessage());
+        assertEquals("2026-03-18T09:05:00Z", allocation.erosionPostedAt().toString());
         server.verify();
     }
 
@@ -544,13 +593,85 @@ class ClaimClientTest {
 
         ClaimDetailDtos.Allocation allocation = client.createAllocation(TENANT, CLAIM_ID,
                 new ClaimCommands.Allocation(POLICY_ID, 2024, "PRIMARY",
-                        new BigDecimal("0.25"), new BigDecimal("31250.0000")));
+                        new BigDecimal("0.25"), new BigDecimal("31250.0000"), null));
 
         assertEquals(ALLOCATION_ID, allocation.allocationId());
         assertEquals(CLAIM_ID, allocation.claimId());
         assertEquals(POLICY_ID, allocation.policyId());
+        assertNull(allocation.limitId());
         assertEquals(2024, allocation.policyYear());
         assertEquals("PRIMARY", allocation.layer());
+        assertEquals("NOT_POSTED", allocation.erosionStatus());
+        server.verify();
+    }
+
+    @Test
+    void createAllocationForwardsTheLimitAndReadsTheErosionState() {
+        server.expect(requestTo(ALLOCATION_URL))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("X-EIA-Tenant", TENANT.toString()))
+                .andExpect(header("X-EIA-Book", "DIRECT"))
+                .andExpect(content().json("""
+                        {
+                          "policyId": "22222222-2222-7222-8222-222222222222",
+                          "policyYear": 2024,
+                          "layer": "PRIMARY",
+                          "allocationPct": 0.25,
+                          "allocatedAmount": 31250.0000,
+                          "limitId": "66666666-6666-7666-8666-666666666666"
+                        }
+                        """, JsonCompareMode.STRICT))
+                .andRespond(withStatus(HttpStatus.CREATED)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(POSTED_ALLOCATION_JSON));
+
+        ClaimDetailDtos.Allocation allocation = client.createAllocation(TENANT, CLAIM_ID,
+                new ClaimCommands.Allocation(POLICY_ID, 2024, "PRIMARY",
+                        new BigDecimal("0.25"), new BigDecimal("31250.0000"), LIMIT_ID));
+
+        assertEquals(LIMIT_ID, allocation.limitId());
+        assertEquals("POSTED", allocation.erosionStatus());
+        assertEquals("limit-erosion-2026-0001", allocation.erosionMessage());
+        assertEquals("2026-03-18T09:05:00Z", allocation.erosionPostedAt().toString());
+        server.verify();
+    }
+
+    @Test
+    void updateAllocationErosionPatchesTheStatusAndMessage() {
+        server.expect(requestTo(ALLOCATION_URL + "/" + ALLOCATION_ID + "/erosion"))
+                .andExpect(method(HttpMethod.PATCH))
+                .andExpect(header("X-EIA-Tenant", TENANT.toString()))
+                .andExpect(header("X-EIA-Book", "DIRECT"))
+                .andExpect(content().json("""
+                        {"status": "FAILED", "message": "limit service unavailable"}
+                        """, JsonCompareMode.STRICT))
+                .andRespond(withSuccess(FAILED_ALLOCATION_JSON, MediaType.APPLICATION_JSON));
+
+        ClaimDetailDtos.Allocation allocation = client.updateAllocationErosion(TENANT, CLAIM_ID,
+                ALLOCATION_ID, "FAILED", "limit service unavailable");
+
+        assertEquals(LIMIT_ID, allocation.limitId());
+        assertEquals("FAILED", allocation.erosionStatus());
+        assertEquals("limit service unavailable", allocation.erosionMessage());
+        assertNull(allocation.erosionPostedAt());
+        server.verify();
+    }
+
+    @Test
+    void updateAllocationErosionPostsAPostedStatusWithoutAMessage() {
+        server.expect(requestTo(ALLOCATION_URL + "/" + ALLOCATION_ID + "/erosion"))
+                .andExpect(method(HttpMethod.PATCH))
+                .andExpect(content().json("""
+                        {"status": "POSTED"}
+                        """, JsonCompareMode.STRICT))
+                .andRespond(withSuccess(POSTED_ALLOCATION_JSON, MediaType.APPLICATION_JSON));
+
+        ClaimDetailDtos.Allocation allocation = client.updateAllocationErosion(TENANT, CLAIM_ID,
+                ALLOCATION_ID, "POSTED", null);
+
+        assertEquals("POSTED", allocation.erosionStatus());
+        assertEquals("limit-erosion-2026-0001", allocation.erosionMessage());
+        assertNotNull(allocation.erosionPostedAt());
         server.verify();
     }
 
@@ -572,7 +693,7 @@ class ClaimClientTest {
         RestClientResponseException error = assertThrows(RestClientResponseException.class,
                 () -> client.createAllocation(TENANT, CLAIM_ID,
                         new ClaimCommands.Allocation(POLICY_ID, 2024, "PRIMARY",
-                                new BigDecimal("0.85"), new BigDecimal("106250.0000"))));
+                                new BigDecimal("0.85"), new BigDecimal("106250.0000"), null)));
 
         assertEquals(409, error.getStatusCode().value());
         assertTrue(error.getResponseBodyAsString().contains("ALLOCATION_EXCEEDS_100"));
@@ -597,7 +718,7 @@ class ClaimClientTest {
         RestClientResponseException error = assertThrows(RestClientResponseException.class,
                 () -> client.createAllocation(TENANT, CLAIM_ID,
                         new ClaimCommands.Allocation(DomainFixtures.OTHER_ID, 2024, "PRIMARY",
-                                new BigDecimal("0.25"), new BigDecimal("31250.0000"))));
+                                new BigDecimal("0.25"), new BigDecimal("31250.0000"), null)));
 
         assertEquals(400, error.getStatusCode().value());
         assertTrue(error.getResponseBodyAsString().contains("POLICY_MISMATCH"));

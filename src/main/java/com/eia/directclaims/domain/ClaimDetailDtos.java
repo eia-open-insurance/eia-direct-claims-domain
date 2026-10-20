@@ -111,15 +111,25 @@ public final class ClaimDetailDtos {
      * {@code allocationId} and omits the expert's {@code tenantId}; the tenant
      * is implied by the request context. Money and percentages are decimal
      * strings.
+     *
+     * <p>{@code limitId} optionally names the policy limit the allocation
+     * erodes. {@code erosionStatus} is {@code NOT_POSTED}, {@code POSTED}, or
+     * {@code FAILED}; {@code erosionMessage} carries the policy posting
+     * reference or failure reason and {@code erosionPostedAt} is stamped only
+     * once the posting succeeds.</p>
      */
     public record Allocation(
             UUID allocationId,
             UUID claimId,
             UUID policyId,
+            UUID limitId,
             int policyYear,
             String layer,
             @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal allocationPct,
             @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal allocatedAmount,
+            String erosionStatus,
+            String erosionMessage,
+            Instant erosionPostedAt,
             Instant createdAt
     ) {
     }

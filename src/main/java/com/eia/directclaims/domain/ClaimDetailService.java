@@ -1,9 +1,13 @@
 package com.eia.directclaims.domain;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
@@ -27,11 +31,17 @@ public class ClaimDetailService {
     private static final int MIN_POLICY_YEAR = 1900;
     private static final int MAX_POLICY_YEAR = 2200;
     private static final int MAX_LAYER_LENGTH = 32;
+    private static final String EROSION_POSTED = "POSTED";
+    private static final String EROSION_FAILED = "FAILED";
+
+    private static final Logger log = LoggerFactory.getLogger(ClaimDetailService.class);
 
     private final ClaimClient client;
+    private final PolicyErosionClient policyClient;
 
-    public ClaimDetailService(ClaimClient client) {
+    public ClaimDetailService(ClaimClient client, PolicyErosionClient policyClient) {
         this.client = client;
+        this.policyClient = policyClient;
     }
 
     // ------------------------------------------------------------------ injuries
@@ -163,7 +173,80 @@ public class ClaimDetailService {
         }
         requireAllocationPct(command.allocationPct());
         nonNegative(command.allocatedAmount(), "allocatedAmount");
-        return client.createAllocation(tenantId, claimId, command);
+        ClaimDetailDtos.Allocation allocation = client.createAllocation(tenantId, claimId, command);
+        if (command.limitId() == null) {
+            return allocation;
+        }
+        return postErosion(tenantId, claimId, allocation, command.limitId());
+    }
+
+    /**
+     * Retries the policy erosion posting for an existing allocation. The
+     * allocation is read from the expert's tenant-scoped list so the policy
+     * posting always uses the persisted policy, limit, and allocated amount.
+     */
+    public ClaimDetailDtos.Allocation retryErosion(UUID tenantId, UUID claimId, UUID allocationId) {
+        ClaimDetailDtos.Allocation allocation = findAllocation(tenantId, claimId, allocationId);
+        if (allocation.limitId() == null) {
+            throw new DomainValidationException("limitId is required to retry erosion for allocation "
+                    + allocationId);
+        }
+        return postErosion(tenantId, claimId, allocation, allocation.limitId());
+    }
+
+    /**
+     * Posts the allocation's erosion fact to the Policy domain and records the
+     * outcome on the expert allocation. A policy failure is not allowed to fail
+     * the caller's create or retry: the allocation is marked {@code FAILED} with
+     * the policy message so it can be posted again later.
+     */
+    private ClaimDetailDtos.Allocation postErosion(UUID tenantId,
+                                                   UUID claimId,
+                                                   ClaimDetailDtos.Allocation allocation,
+                                                   UUID limitId) {
+        PolicyErosionClient.PolicyErosionResult result;
+        try {
+            result = policyClient.postErosion(tenantId, allocation.policyId(), limitId, claimId,
+                    allocation.allocationId(), allocation.allocatedAmount(), Instant.now());
+        } catch (RuntimeException ex) {
+            // The policy client normally normalises its own failures; this keeps
+            // an unexpected client fault from failing the allocation create.
+            log.warn("Policy erosion for allocation {} threw: {}", allocation.allocationId(),
+                    ex.getMessage());
+            result = PolicyErosionClient.PolicyErosionResult.failure(
+                    failureMessage(ex.getMessage()));
+        }
+        String status = result.posted() ? EROSION_POSTED : EROSION_FAILED;
+        try {
+            return client.updateAllocationErosion(tenantId, claimId, allocation.allocationId(),
+                    status, result.message());
+        } catch (RestClientException ex) {
+            log.warn("Could not record {} erosion for allocation {}: {}", status,
+                    allocation.allocationId(), ex.getMessage());
+            return allocation;
+        }
+    }
+
+    private static String failureMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return PolicyErosionClient.UNAVAILABLE_MESSAGE;
+        }
+        return message.length() > PolicyErosionClient.MAX_MESSAGE_LENGTH
+                ? message.substring(0, PolicyErosionClient.MAX_MESSAGE_LENGTH)
+                : message;
+    }
+
+    private ClaimDetailDtos.Allocation findAllocation(UUID tenantId, UUID claimId,
+                                                      UUID allocationId) {
+        ClaimDetailDtos.AllocationSummary summary = client.findAllocations(tenantId, claimId);
+        if (summary != null && summary.items() != null) {
+            for (ClaimDetailDtos.Allocation allocation : summary.items()) {
+                if (allocationId.equals(allocation.allocationId())) {
+                    return allocation;
+                }
+            }
+        }
+        throw new AllocationNotFoundException(allocationId);
     }
 
     /**

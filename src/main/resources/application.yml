@@ -8,6 +8,8 @@ spring:
 eia:
   direct-claims:
     expert-url: http://localhost:8087
+  policy:
+    base-url: ${EIA_POLICY_BASE_URL:http://localhost:8084}
 
 management:
   endpoints:

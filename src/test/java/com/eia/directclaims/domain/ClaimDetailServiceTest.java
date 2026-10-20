@@ -2,9 +2,11 @@ package com.eia.directclaims.domain;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.client.ResourceAccessException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -13,10 +15,13 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -30,6 +35,9 @@ class ClaimDetailServiceTest {
 
     @Mock
     private ClaimClient client;
+
+    @Mock
+    private PolicyErosionClient policyClient;
 
     @InjectMocks
     private ClaimDetailService service;
@@ -196,13 +204,13 @@ class ClaimDetailServiceTest {
     void allocationRequiresPolicyYearAndLayer() {
         assertThrows(DomainValidationException.class, () -> service.allocate(TENANT, CLAIM_ID,
                 new ClaimCommands.Allocation(null, 2024, "PRIMARY", new BigDecimal("0.25"),
-                        new BigDecimal("1000"))));
+                        new BigDecimal("1000"), null)));
         assertThrows(DomainValidationException.class, () -> service.allocate(TENANT, CLAIM_ID,
                 new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, null, "PRIMARY",
-                        new BigDecimal("0.25"), new BigDecimal("1000"))));
+                        new BigDecimal("0.25"), new BigDecimal("1000"), null)));
         assertThrows(DomainValidationException.class, () -> service.allocate(TENANT, CLAIM_ID,
                 new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, 2024, " ",
-                        new BigDecimal("0.25"), new BigDecimal("1000"))));
+                        new BigDecimal("0.25"), new BigDecimal("1000"), null)));
         verifyNoInteractions(client);
     }
 
@@ -210,10 +218,10 @@ class ClaimDetailServiceTest {
     void allocationRejectsAnImpossibleYearOrAnOverlongLayer() {
         assertThrows(DomainValidationException.class, () -> service.allocate(TENANT, CLAIM_ID,
                 new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, 1899, "PRIMARY",
-                        new BigDecimal("0.25"), new BigDecimal("1000"))));
+                        new BigDecimal("0.25"), new BigDecimal("1000"), null)));
         assertThrows(DomainValidationException.class, () -> service.allocate(TENANT, CLAIM_ID,
                 new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, 2024,
-                        "A".repeat(33), new BigDecimal("0.25"), new BigDecimal("1000"))));
+                        "A".repeat(33), new BigDecimal("0.25"), new BigDecimal("1000"), null)));
         verifyNoInteractions(client);
     }
 
@@ -221,13 +229,13 @@ class ClaimDetailServiceTest {
     void allocationRejectsAPercentageOutsideTheOpenUnitInterval() {
         assertThrows(DomainValidationException.class, () -> service.allocate(TENANT, CLAIM_ID,
                 new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, 2024, "PRIMARY",
-                        BigDecimal.ZERO, new BigDecimal("1000"))));
+                        BigDecimal.ZERO, new BigDecimal("1000"), null)));
         assertThrows(DomainValidationException.class, () -> service.allocate(TENANT, CLAIM_ID,
                 new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, 2024, "PRIMARY",
-                        new BigDecimal("1.000001"), new BigDecimal("1000"))));
+                        new BigDecimal("1.000001"), new BigDecimal("1000"), null)));
         assertThrows(DomainValidationException.class, () -> service.allocate(TENANT, CLAIM_ID,
                 new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, 2024, "PRIMARY", null,
-                        new BigDecimal("1000"))));
+                        new BigDecimal("1000"), null)));
         verifyNoInteractions(client);
     }
 
@@ -236,19 +244,153 @@ class ClaimDetailServiceTest {
         DomainValidationException error = assertThrows(DomainValidationException.class,
                 () -> service.allocate(TENANT, CLAIM_ID,
                         new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, 2024, "PRIMARY",
-                                new BigDecimal("0.25"), new BigDecimal("-0.01"))));
+                                new BigDecimal("0.25"), new BigDecimal("-0.01"), null)));
         assertTrue(error.getMessage().contains("zero or greater"));
         verifyNoInteractions(client);
     }
 
     @Test
     void allocationDelegatesAValidSplit() {
-        ClaimCommands.Allocation command = new ClaimCommands.Allocation(DomainFixtures.POLICY_ID,
-                2024, "PRIMARY", new BigDecimal("0.25"), new BigDecimal("31250.0000"));
+        ClaimCommands.Allocation command = allocation(null);
         ClaimDetailDtos.Allocation created = DomainFixtures.allocation();
         when(client.createAllocation(TENANT, CLAIM_ID, command)).thenReturn(created);
 
         assertEquals(created, service.allocate(TENANT, CLAIM_ID, command));
+    }
+
+    @Test
+    void allocationWithoutALimitLeavesErosionNotPosted() {
+        ClaimCommands.Allocation command = allocation(null);
+        ClaimDetailDtos.Allocation created = DomainFixtures.allocation();
+        when(client.createAllocation(TENANT, CLAIM_ID, command)).thenReturn(created);
+
+        ClaimDetailDtos.Allocation result = service.allocate(TENANT, CLAIM_ID, command);
+
+        assertSame(created, result);
+        assertEquals("NOT_POSTED", result.erosionStatus());
+        verifyNoInteractions(policyClient);
+    }
+
+    @Test
+    void allocationWithALimitPostsErosionAndRecordsPosted() {
+        ClaimCommands.Allocation command = allocation(DomainFixtures.LIMIT_ID);
+        ClaimDetailDtos.Allocation created = DomainFixtures.allocationWithLimit();
+        ClaimDetailDtos.Allocation posted = DomainFixtures.postedAllocation(null);
+        when(client.createAllocation(TENANT, CLAIM_ID, command)).thenReturn(created);
+        when(policyClient.postErosion(eq(TENANT), eq(DomainFixtures.POLICY_ID),
+                eq(DomainFixtures.LIMIT_ID), eq(CLAIM_ID), eq(DomainFixtures.ALLOCATION_ID),
+                eq(new BigDecimal("31250.0000")), any(Instant.class)))
+                .thenReturn(new PolicyErosionClient.PolicyErosionResult(true, null));
+        when(client.updateAllocationErosion(TENANT, CLAIM_ID, DomainFixtures.ALLOCATION_ID,
+                "POSTED", null)).thenReturn(posted);
+
+        ClaimDetailDtos.Allocation result = service.allocate(TENANT, CLAIM_ID, command);
+
+        assertEquals("POSTED", result.erosionStatus());
+        assertNotNull(result.erosionPostedAt());
+        ArgumentCaptor<Instant> asOf = ArgumentCaptor.forClass(Instant.class);
+        verify(policyClient).postErosion(eq(TENANT), eq(DomainFixtures.POLICY_ID),
+                eq(DomainFixtures.LIMIT_ID), eq(CLAIM_ID), eq(DomainFixtures.ALLOCATION_ID),
+                eq(new BigDecimal("31250.0000")), asOf.capture());
+        assertNotNull(asOf.getValue());
+    }
+
+    @Test
+    void aPolicyErosionFailureIsRecordedOnTheAllocationWithoutFailingTheCreate() {
+        ClaimCommands.Allocation command = allocation(DomainFixtures.LIMIT_ID);
+        ClaimDetailDtos.Allocation created = DomainFixtures.allocationWithLimit();
+        String detail = "The erosion fact would exceed the limit.";
+        ClaimDetailDtos.Allocation failed = DomainFixtures.failedAllocation(detail);
+        when(client.createAllocation(TENANT, CLAIM_ID, command)).thenReturn(created);
+        when(policyClient.postErosion(eq(TENANT), eq(DomainFixtures.POLICY_ID),
+                eq(DomainFixtures.LIMIT_ID), eq(CLAIM_ID), eq(DomainFixtures.ALLOCATION_ID),
+                eq(new BigDecimal("31250.0000")), any(Instant.class)))
+                .thenReturn(new PolicyErosionClient.PolicyErosionResult(false, detail));
+        when(client.updateAllocationErosion(TENANT, CLAIM_ID, DomainFixtures.ALLOCATION_ID,
+                "FAILED", detail)).thenReturn(failed);
+
+        ClaimDetailDtos.Allocation result = service.allocate(TENANT, CLAIM_ID, command);
+
+        assertEquals("FAILED", result.erosionStatus());
+        assertEquals(detail, result.erosionMessage());
+        assertNull(result.erosionPostedAt());
+    }
+
+    @Test
+    void anUnexpectedPolicyClientFaultIsRecordedAsFailedWithoutFailingTheCreate() {
+        ClaimCommands.Allocation command = allocation(DomainFixtures.LIMIT_ID);
+        ClaimDetailDtos.Allocation created = DomainFixtures.allocationWithLimit();
+        ClaimDetailDtos.Allocation failed = DomainFixtures.failedAllocation("policy offline");
+        when(client.createAllocation(TENANT, CLAIM_ID, command)).thenReturn(created);
+        when(policyClient.postErosion(eq(TENANT), eq(DomainFixtures.POLICY_ID),
+                eq(DomainFixtures.LIMIT_ID), eq(CLAIM_ID), eq(DomainFixtures.ALLOCATION_ID),
+                eq(new BigDecimal("31250.0000")), any(Instant.class)))
+                .thenThrow(new IllegalStateException("policy offline"));
+        when(client.updateAllocationErosion(TENANT, CLAIM_ID, DomainFixtures.ALLOCATION_ID,
+                "FAILED", "policy offline")).thenReturn(failed);
+
+        ClaimDetailDtos.Allocation result = service.allocate(TENANT, CLAIM_ID, command);
+
+        assertEquals("FAILED", result.erosionStatus());
+        assertEquals("policy offline", result.erosionMessage());
+    }
+
+    @Test
+    void anExpertErosionUpdateFailureDoesNotFailTheCreate() {
+        ClaimCommands.Allocation command = allocation(DomainFixtures.LIMIT_ID);
+        ClaimDetailDtos.Allocation created = DomainFixtures.allocationWithLimit();
+        when(client.createAllocation(TENANT, CLAIM_ID, command)).thenReturn(created);
+        when(policyClient.postErosion(eq(TENANT), eq(DomainFixtures.POLICY_ID),
+                eq(DomainFixtures.LIMIT_ID), eq(CLAIM_ID), eq(DomainFixtures.ALLOCATION_ID),
+                eq(new BigDecimal("31250.0000")), any(Instant.class)))
+                .thenReturn(new PolicyErosionClient.PolicyErosionResult(true, null));
+        when(client.updateAllocationErosion(TENANT, CLAIM_ID, DomainFixtures.ALLOCATION_ID,
+                "POSTED", null)).thenThrow(new ResourceAccessException("expert down"));
+
+        assertSame(created, service.allocate(TENANT, CLAIM_ID, command));
+    }
+
+    @Test
+    void retryFindsTheAllocationAndPostsErosion() {
+        ClaimDetailDtos.Allocation failed = DomainFixtures.failedAllocation("timeout");
+        ClaimDetailDtos.Allocation posted = DomainFixtures.postedAllocation(null);
+        when(client.findAllocations(TENANT, CLAIM_ID)).thenReturn(new ClaimDetailDtos.AllocationSummary(
+                List.of(failed), new BigDecimal("0.250000"), new BigDecimal("31250.0000")));
+        when(policyClient.postErosion(eq(TENANT), eq(DomainFixtures.POLICY_ID),
+                eq(DomainFixtures.LIMIT_ID), eq(CLAIM_ID), eq(DomainFixtures.ALLOCATION_ID),
+                eq(new BigDecimal("31250.0000")), any(Instant.class)))
+                .thenReturn(new PolicyErosionClient.PolicyErosionResult(true, null));
+        when(client.updateAllocationErosion(TENANT, CLAIM_ID, DomainFixtures.ALLOCATION_ID,
+                "POSTED", null)).thenReturn(posted);
+
+        ClaimDetailDtos.Allocation result = service.retryErosion(TENANT, CLAIM_ID,
+                DomainFixtures.ALLOCATION_ID);
+
+        assertEquals("POSTED", result.erosionStatus());
+        assertNotNull(result.erosionPostedAt());
+    }
+
+    @Test
+    void retryingAnAllocationWithoutALimitIsRejected() {
+        when(client.findAllocations(TENANT, CLAIM_ID)).thenReturn(new ClaimDetailDtos.AllocationSummary(
+                List.of(DomainFixtures.allocation()), new BigDecimal("0.250000"),
+                new BigDecimal("31250.0000")));
+
+        DomainValidationException error = assertThrows(DomainValidationException.class,
+                () -> service.retryErosion(TENANT, CLAIM_ID, DomainFixtures.ALLOCATION_ID));
+
+        assertTrue(error.getMessage().contains("limitId"));
+        verifyNoInteractions(policyClient);
+    }
+
+    @Test
+    void retryingAnUnknownAllocationIsNotFound() {
+        when(client.findAllocations(TENANT, CLAIM_ID)).thenReturn(new ClaimDetailDtos.AllocationSummary(
+                List.of(), BigDecimal.ZERO, BigDecimal.ZERO));
+
+        assertThrows(AllocationNotFoundException.class,
+                () -> service.retryErosion(TENANT, CLAIM_ID, DomainFixtures.ALLOCATION_ID));
+        verifyNoInteractions(policyClient);
     }
 
     @Test
@@ -496,6 +638,11 @@ class ClaimDetailServiceTest {
         assertEquals(1, service.notes(TENANT, CLAIM_ID).size());
         verify(client).findTasks(TENANT, CLAIM_ID);
         verify(client).findNotes(TENANT, CLAIM_ID);
+    }
+
+    private static ClaimCommands.Allocation allocation(UUID limitId) {
+        return new ClaimCommands.Allocation(DomainFixtures.POLICY_ID, 2024, "PRIMARY",
+                new BigDecimal("0.25"), new BigDecimal("31250.0000"), limitId);
     }
 
     private static ClaimCommands.Injury injury(UUID claimant) {

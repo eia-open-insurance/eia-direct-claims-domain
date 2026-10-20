@@ -34,6 +34,7 @@ import static com.eia.directclaims.domain.DomainFixtures.injury;
 import static com.eia.directclaims.domain.DomainFixtures.lien;
 import static com.eia.directclaims.domain.DomainFixtures.litigation;
 import static com.eia.directclaims.domain.DomainFixtures.note;
+import static com.eia.directclaims.domain.DomainFixtures.postedAllocation;
 import static com.eia.directclaims.domain.DomainFixtures.recovery;
 import static com.eia.directclaims.domain.DomainFixtures.reserve;
 import static com.eia.directclaims.domain.DomainFixtures.settlement;
@@ -318,6 +319,72 @@ class ClaimDetailControllerTest {
                 .andExpect(jsonPath("$.allocatedAmount").isString())
                 .andExpect(jsonPath("$.allocatedAmount").value("31250.0000"))
                 .andExpect(jsonPath("$.tenantId").doesNotExist());
+    }
+
+    @Test
+    void recordsAnAllocationWithALimitAndReturnsItsErosionStatus() throws Exception {
+        when(service.allocate(eq(TENANT), eq(CLAIM_ID), any(ClaimCommands.Allocation.class)))
+                .thenReturn(postedAllocation("limit-erosion-2026-0001"));
+
+        mvc.perform(post(BASE + "/allocations")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "policyId": "22222222-2222-7222-8222-222222222222",
+                                  "policyYear": 2024,
+                                  "layer": "PRIMARY",
+                                  "allocationPct": 0.25,
+                                  "allocatedAmount": "31250.00",
+                                  "limitId": "66666666-6666-7666-8666-666666666666"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.allocationId").value(ALLOCATION_ID.toString()))
+                .andExpect(jsonPath("$.limitId").value("66666666-6666-7666-8666-666666666666"))
+                .andExpect(jsonPath("$.erosionStatus").value("POSTED"))
+                .andExpect(jsonPath("$.erosionMessage").value("limit-erosion-2026-0001"))
+                .andExpect(jsonPath("$.erosionPostedAt").value("2026-03-18T09:00:00Z"));
+    }
+
+    @Test
+    void retriesAllocationErosion() throws Exception {
+        when(service.retryErosion(TENANT, CLAIM_ID, ALLOCATION_ID))
+                .thenReturn(postedAllocation("retry accepted"));
+
+        mvc.perform(post(BASE + "/allocations/" + ALLOCATION_ID + "/erosion")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allocationId").value(ALLOCATION_ID.toString()))
+                .andExpect(jsonPath("$.erosionStatus").value("POSTED"))
+                .andExpect(jsonPath("$.erosionMessage").value("retry accepted"))
+                .andExpect(jsonPath("$.erosionPostedAt").value("2026-03-18T09:00:00Z"));
+    }
+
+    @Test
+    void retryingAnUnknownAllocationIsA404() throws Exception {
+        when(service.retryErosion(TENANT, CLAIM_ID, ALLOCATION_ID))
+                .thenThrow(new AllocationNotFoundException(ALLOCATION_ID));
+
+        mvc.perform(post(BASE + "/allocations/" + ALLOCATION_ID + "/erosion")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value(
+                        "Claim allocation not found: " + ALLOCATION_ID));
+    }
+
+    @Test
+    void allocationErosionRetryKeepsTheDirectBookWall() throws Exception {
+        mvc.perform(post(BASE + "/allocations/" + ALLOCATION_ID + "/erosion")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", "ASSUMED"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+        verifyNoInteractions(service);
     }
 
     @Test

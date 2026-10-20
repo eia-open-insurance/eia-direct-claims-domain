@@ -46,3 +46,14 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
   UUID alongside `status` and forwards both, with the tenant and DIRECT book, to the
   expert's internal claim list. MockRestServiceServer tests cover the query parameters and
   headers, and the public `ClaimDto` response shape is unchanged.
+- Claim allocation policy-erosion orchestration: `POST /api/v1/claims/{claimId}/allocations`
+  accepts an optional `limitId` and the public `Allocation` adds
+  `limitId`/`erosionStatus`/`erosionMessage`/`erosionPostedAt`. After a create with a limit
+  the domain posts the erosion fact to the Policy domain's public
+  `POST /api/v1/policies/{policyId}/erosion` using the allocation id as `Idempotency-Key`,
+  then records `POSTED` or `FAILED` (with the policy detail) on the expert allocation; a
+  policy failure never fails the 201 create. `POST .../allocations/{allocationId}/erosion`
+  retries the posting from the expert allocation list and returns the updated allocation,
+  with a 404 for an unknown allocation. The Policy base URL is `eia.policy.base-url`
+  (default `http://localhost:8084`, `EIA_POLICY_BASE_URL`), and tests cover the no-limit,
+  posted, failed, retry, exact header/body/idempotency, and 404 paths.

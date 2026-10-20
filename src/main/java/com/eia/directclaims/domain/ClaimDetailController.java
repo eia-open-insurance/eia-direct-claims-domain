@@ -156,6 +156,21 @@ public class ClaimDetailController {
         return service.allocate(RequestGuard.requireTenant(tenantHeader), claimId, command);
     }
 
+    /**
+     * Retries the policy erosion posting for an allocation recorded on the
+     * claim. The allocation is located through the expert list, posted to the
+     * Policy domain, and returned with its resulting erosion status.
+     */
+    @PostMapping("/allocations/{allocationId}/erosion")
+    public ClaimDetailDtos.Allocation retryAllocationErosion(
+            @RequestHeader(value = "X-EIA-Tenant", required = false) String tenantHeader,
+            @RequestHeader(value = "X-EIA-Book", required = false) String book,
+            @PathVariable UUID claimId,
+            @PathVariable UUID allocationId) {
+        RequestGuard.requireDirectBook(book);
+        return service.retryErosion(RequestGuard.requireTenant(tenantHeader), claimId, allocationId);
+    }
+
     // ------------------------------------------------------------------ litigation
     @GetMapping("/litigation")
     public List<ClaimDetailDtos.Litigation> litigation(

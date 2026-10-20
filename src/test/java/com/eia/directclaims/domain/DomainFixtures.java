@@ -24,6 +24,7 @@ final class DomainFixtures {
     static final UUID TASK_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d39");
     static final UUID NOTE_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d3a");
     static final UUID ALLOCATION_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d3b");
+    static final UUID LIMIT_ID = UUID.fromString("66666666-6666-7666-8666-666666666666");
     static final Instant NOW = Instant.parse("2026-03-18T09:00:00Z");
 
     private DomainFixtures() {
@@ -104,8 +105,27 @@ final class DomainFixtures {
     }
 
     static ClaimDetailDtos.Allocation allocation() {
-        return new ClaimDetailDtos.Allocation(ALLOCATION_ID, CLAIM_ID, POLICY_ID, 2024, "PRIMARY",
-                new BigDecimal("0.250000"), new BigDecimal("31250.0000"), NOW);
+        return new ClaimDetailDtos.Allocation(ALLOCATION_ID, CLAIM_ID, POLICY_ID, null, 2024,
+                "PRIMARY", new BigDecimal("0.250000"), new BigDecimal("31250.0000"),
+                "NOT_POSTED", null, null, NOW);
+    }
+
+    static ClaimDetailDtos.Allocation allocationWithLimit() {
+        return new ClaimDetailDtos.Allocation(ALLOCATION_ID, CLAIM_ID, POLICY_ID, LIMIT_ID, 2024,
+                "PRIMARY", new BigDecimal("0.250000"), new BigDecimal("31250.0000"),
+                "NOT_POSTED", null, null, NOW);
+    }
+
+    static ClaimDetailDtos.Allocation postedAllocation(String message) {
+        return new ClaimDetailDtos.Allocation(ALLOCATION_ID, CLAIM_ID, POLICY_ID, LIMIT_ID, 2024,
+                "PRIMARY", new BigDecimal("0.250000"), new BigDecimal("31250.0000"),
+                "POSTED", message, NOW, NOW);
+    }
+
+    static ClaimDetailDtos.Allocation failedAllocation(String message) {
+        return new ClaimDetailDtos.Allocation(ALLOCATION_ID, CLAIM_ID, POLICY_ID, LIMIT_ID, 2024,
+                "PRIMARY", new BigDecimal("0.250000"), new BigDecimal("31250.0000"),
+                "FAILED", message, null, NOW);
     }
 
     static ClaimDetailDtos.AllocationSummary allocationSummary() {

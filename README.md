@@ -7,7 +7,7 @@
 - Owner: Direct Claims
 - Runtime: Java 22 and Spring Boot
 - Data store: None (owns no tables; calls the expert)
-- Depends on: eia-direct-claims-expert, eia-contracts, eia-platform/libs
+- Depends on: eia-direct-claims-expert, eia-policy-domain, eia-contracts, eia-platform/libs
 
 ## Purpose
 
@@ -23,7 +23,8 @@ Direct Claims business rules, transaction catalog, orchestration, approvals, and
 
 ## Local run
 
-Prerequisites: JDK 22 and the expert service on port 8087.
+Prerequisites: JDK 22, the expert service on port 8087, and the Policy domain on port 8084
+for claim-allocation erosion postings.
 
 ```powershell
 $env:JAVA_HOME='C:\Program Files\Eclipse Adoptium\jdk-22.0.2.9-hotspot'
@@ -31,8 +32,9 @@ $env:JAVA_HOME='C:\Program Files\Eclipse Adoptium\jdk-22.0.2.9-hotspot'
 .\gradlew bootRun
 ```
 
-The service listens on **8088** and calls the expert at `eia.direct-claims.expert-url`
-(default `http://localhost:8087`).
+The service listens on **8088**, calls the expert at `eia.direct-claims.expert-url`
+(default `http://localhost:8087`), and calls the Policy domain at `eia.policy.base-url`
+(default `http://localhost:8084`, overridable with `EIA_POLICY_BASE_URL`).
 
 Public endpoints (all require `X-EIA-Tenant` and `X-EIA-Book: DIRECT`; any other or missing
 book returns 404, never 403):
@@ -48,7 +50,7 @@ book returns 404, never 403):
 - `GET|POST /api/v1/claims/{id}/exposures`, `PATCH /api/v1/claims/{id}/exposures/{exposureId}`
 - `GET|POST /api/v1/claims/{id}/reserves`
 - `GET /api/v1/claims/{id}/coverage`, `POST /api/v1/claims/{id}/coverage`
-- `GET|POST /api/v1/claims/{id}/allocations`
+- `GET|POST /api/v1/claims/{id}/allocations`, `POST .../allocations/{allocationId}/erosion`
 - `GET|POST /api/v1/claims/{id}/litigation`, `PATCH .../litigation/{litigationId}`
 - `GET|POST /api/v1/claims/{id}/settlements`, `POST .../settlements/{settlementId}/approve`,
   `POST .../settlements/{settlementId}/execute`
@@ -75,14 +77,25 @@ preserved as the expert's 409 problem+json. Claim responses expose `assignedAdju
 
 `GET /api/v1/claims/{claimId}/allocations` returns the policy-year and layer split of a claim
 as `{items, totalPct, totalAmount}` oldest first. `POST` takes
-`{policyId, policyYear, layer, allocationPct, allocatedAmount}` and returns 201 with the
-created allocation. The domain requires the policy, year, layer, percentage, and amount;
+`{policyId, policyYear, layer, allocationPct, allocatedAmount, limitId?}` and returns 201 with
+the created allocation. The domain requires the policy, year, layer, percentage, and amount;
 `allocationPct` must be greater than 0 and at most 1, `allocatedAmount` must be zero or
 greater, `layer` is at most 32 characters, and `policyYear` is 1900-2200. The expert remains
 authoritative for the claim's own policy, the 1.0 percentage total across the claim, and
 every other invariant; expert 400/404/409 problem+json responses keep their status and
 detail. Allocation projections use `allocationId` and omit the expert's `tenantId`; money
 and percentages are decimal strings.
+
+Allocations expose `limitId`, `erosionStatus` (`NOT_POSTED`, `POSTED`, `FAILED`),
+`erosionMessage`, and `erosionPostedAt`. When a create carries a `limitId`, the domain posts
+an erosion fact to the Policy domain's `POST /api/v1/policies/{policyId}/erosion` with
+`X-EIA-Tenant`, `X-EIA-Book: DIRECT`, and the allocation id as `Idempotency-Key`
+(`{limitId, claimId, allocationId, sourceVersion: 1, paidAmount: 0,
+reservedAmount: allocatedAmount, recoveredAmount: 0, asOf}`), then records `POSTED` or
+`FAILED` (with the policy rejection detail) on the allocation. A policy failure never fails
+the 201 create. `POST /api/v1/claims/{claimId}/allocations/{allocationId}/erosion` reloads
+the allocation from the expert list, posts the same fact again, and returns the allocation
+with its updated erosion state; an unknown allocation is a 404.
 
 `GET /api/v1/claims/search` matches `claimNumber`, `claimType`, `causeCode`, and `policyId`
 case-insensitively for the caller's tenant and the DIRECT book. A blank `q` returns the latest

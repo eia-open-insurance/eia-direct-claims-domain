@@ -1,5 +1,6 @@
 package com.eia.directclaims.domain;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.ResponseEntity;
@@ -226,7 +227,28 @@ public class ClaimClient {
         AllocationResponse response = client.post()
                 .uri(uri -> uri.path("/internal/v1/claims/{id}/allocations").build(claimId))
                 .header("X-EIA-Tenant", tenantId.toString())
-                .body(command)
+                .body(new AllocationRequest(command.policyId(), command.policyYear(), command.layer(),
+                        command.allocationPct(), command.allocatedAmount(), command.limitId()))
+                .retrieve()
+                .body(AllocationResponse.class);
+        return response.toPublic();
+    }
+
+    /**
+     * Records the policy-erosion posting outcome on one expert allocation. The
+     * expert stamps {@code erosionPostedAt} for {@code POSTED} and stores the
+     * message for {@code FAILED}; repeating a status is an idempotent no-op.
+     */
+    public ClaimDetailDtos.Allocation updateAllocationErosion(UUID tenantId,
+                                                              UUID claimId,
+                                                              UUID allocationId,
+                                                              String status,
+                                                              String message) {
+        AllocationResponse response = client.patch()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/allocations/{allocationId}/erosion")
+                        .build(claimId, allocationId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(new AllocationErosionRequest(status, message))
                 .retrieve()
                 .body(AllocationResponse.class);
         return response.toPublic();
@@ -481,23 +503,47 @@ public class ClaimClient {
     /**
      * The expert's allocation projection uses {@code id} and carries the
      * {@code tenantId}; the public domain projection uses {@code allocationId}
-     * and omits the tenant implied by the request context.
+     * and omits the tenant implied by the request context. {@code limitId} is
+     * optional and the erosion state starts as {@code NOT_POSTED}.
      */
     record AllocationResponse(
             UUID id,
             UUID tenantId,
             UUID claimId,
             UUID policyId,
+            UUID limitId,
             int policyYear,
             String layer,
             BigDecimal allocationPct,
             BigDecimal allocatedAmount,
+            String erosionStatus,
+            String erosionMessage,
+            Instant erosionPostedAt,
             Instant createdAt
     ) {
         ClaimDetailDtos.Allocation toPublic() {
-            return new ClaimDetailDtos.Allocation(id, claimId, policyId, policyYear, layer,
-                    allocationPct, allocatedAmount, createdAt);
+            return new ClaimDetailDtos.Allocation(id, claimId, policyId, limitId, policyYear, layer,
+                    allocationPct, allocatedAmount,
+                    erosionStatus == null ? "NOT_POSTED" : erosionStatus, erosionMessage,
+                    erosionPostedAt, createdAt);
         }
+    }
+
+    /** The expert's create command; an absent limit is omitted rather than sent as null. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record AllocationRequest(
+            UUID policyId,
+            Integer policyYear,
+            String layer,
+            BigDecimal allocationPct,
+            BigDecimal allocatedAmount,
+            UUID limitId
+    ) {
+    }
+
+    /** An absent message is omitted; the expert accepts either shape. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record AllocationErosionRequest(String status, String message) {
     }
 
     record AllocationSummaryResponse(

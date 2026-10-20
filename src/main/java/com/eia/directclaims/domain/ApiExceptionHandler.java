@@ -36,6 +36,12 @@ public class ApiExceptionHandler {
         return error(HttpStatus.NOT_FOUND, "NOT_FOUND", ex.getMessage(), request, null);
     }
 
+    @ExceptionHandler(AllocationNotFoundException.class)
+    public ResponseEntity<ApiError> allocationNotFound(AllocationNotFoundException ex,
+                                                       HttpServletRequest request) {
+        return error(HttpStatus.NOT_FOUND, "NOT_FOUND", ex.getMessage(), request, null);
+    }
+
     @ExceptionHandler(BookAccessDeniedException.class)
     public ResponseEntity<ApiError> bookDenied(BookAccessDeniedException ex, HttpServletRequest request) {
         log.warn("Rejected non-DIRECT book access on {}", request.getRequestURI());
