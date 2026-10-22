@@ -64,3 +64,10 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
   `MASS_TORT_YEAR_OUTSIDE_BLOCK`, whose message names the year and block. `DRAFT`, 404,
   and 5xx/unavailable profiles allow the create. Tests cover inside/outside years, both
   boundary years, DRAFT, 404, 5xx, and the always-fetch behavior without a limit.
+- Settlement payment link: `PATCH /api/v1/claims/{claimId}/settlements/{settlementId}/payment`
+  takes `{paymentId}` and forwards it to the expert with `X-EIA-Tenant` and the DIRECT book;
+  a null `paymentId` clears the link. The public `Settlement` projection adds `paymentId` and
+  `paymentLinkedAt`; the expert owns the allowed status transitions and duplicate-link checks,
+  and its 400/404/409 problem+json responses keep their status and detail.
+  MockRestServiceServer tests cover the controller, client route/headers/body, DTO parsing,
+  link, and unlink.

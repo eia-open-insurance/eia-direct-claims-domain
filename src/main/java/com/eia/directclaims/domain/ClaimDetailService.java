@@ -348,6 +348,18 @@ public class ClaimDetailService {
         return client.executeSettlement(tenantId, claimId, settlementId, command);
     }
 
+    /**
+     * Links the settlement to its payment, or clears the link when
+     * {@code paymentId} is null. The expert owns the settlement state and
+     * duplicate-link checks; the domain forwards the command unchanged.
+     */
+    public ClaimDetailDtos.Settlement linkSettlementPayment(UUID tenantId,
+                                                            UUID claimId,
+                                                            UUID settlementId,
+                                                            ClaimCommands.SettlementPayment command) {
+        return client.linkSettlementPayment(tenantId, claimId, settlementId, command);
+    }
+
     // ------------------------------------------------------------------ recoveries
     public List<ClaimDetailDtos.Recovery> recoveries(UUID tenantId, UUID claimId) {
         return client.findRecoveries(tenantId, claimId);

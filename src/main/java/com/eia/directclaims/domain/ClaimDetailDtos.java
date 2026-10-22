@@ -178,6 +178,8 @@ public final class ClaimDetailDtos {
             UUID authorizedBy,
             Instant authorizedAt,
             Instant executedAt,
+            UUID paymentId,
+            Instant paymentLinkedAt,
             int version,
             Instant createdAt,
             Instant updatedAt

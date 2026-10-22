@@ -329,6 +329,25 @@ public class ClaimClient {
                 .body(ClaimDetailDtos.Settlement.class);
     }
 
+    /**
+     * Links the payment to a settlement, or clears the link when the command's
+     * {@code paymentId} is null. The expert owns the settlement state checks and
+     * stamps {@code paymentLinkedAt}; its 400/404/409 problems reach the caller
+     * unchanged.
+     */
+    public ClaimDetailDtos.Settlement linkSettlementPayment(UUID tenantId,
+                                                            UUID claimId,
+                                                            UUID settlementId,
+                                                            ClaimCommands.SettlementPayment command) {
+        return client.patch()
+                .uri(uri -> uri.path("/internal/v1/claims/{id}/settlements/{settlementId}/payment")
+                        .build(claimId, settlementId))
+                .header("X-EIA-Tenant", tenantId.toString())
+                .body(command)
+                .retrieve()
+                .body(ClaimDetailDtos.Settlement.class);
+    }
+
     // ------------------------------------------------------------------ recoveries
     public List<ClaimDetailDtos.Recovery> findRecoveries(UUID tenantId, UUID claimId) {
         return client.get()

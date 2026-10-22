@@ -53,7 +53,8 @@ book returns 404, never 403):
 - `GET|POST /api/v1/claims/{id}/allocations`, `POST .../allocations/{allocationId}/erosion`
 - `GET|POST /api/v1/claims/{id}/litigation`, `PATCH .../litigation/{litigationId}`
 - `GET|POST /api/v1/claims/{id}/settlements`, `POST .../settlements/{settlementId}/approve`,
-  `POST .../settlements/{settlementId}/execute`
+  `POST .../settlements/{settlementId}/execute`,
+  `PATCH .../settlements/{settlementId}/payment`
 - `GET|POST /api/v1/claims/{id}/recoveries`, `PATCH .../recoveries/{recoveryId}`
 - `GET|POST /api/v1/claims/{id}/liens`, `PATCH .../liens/{lienId}`
 - `GET|POST /api/v1/claims/{id}/tasks`, `PATCH .../tasks/{taskId}`
@@ -110,6 +111,12 @@ with its updated erosion state; an unknown allocation is a 404.
 case-insensitively for the caller's tenant and the DIRECT book. A blank `q` returns the latest
 records by `updatedAt`; `limit` defaults to 10 and is capped at 25. The domain owns no tables, so
 the projection is built from the existing tenant-scoped expert list.
+
+`PATCH /api/v1/claims/{claimId}/settlements/{settlementId}/payment` takes `{paymentId}` and
+forwards it to the expert with the tenant and DIRECT book. A null `paymentId` clears the link.
+Settlement projections expose `paymentId` and `paymentLinkedAt`; the expert remains
+authoritative for which settlement states may be linked and for duplicate-payment checks, and
+its 400/404/409 problem+json responses keep their status and detail.
 
 ## Verification
 

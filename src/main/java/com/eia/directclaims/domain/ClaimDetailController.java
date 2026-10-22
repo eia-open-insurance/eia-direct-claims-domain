@@ -249,6 +249,23 @@ public class ClaimDetailController {
                 command);
     }
 
+    /**
+     * Links the payment that funds a settlement, or clears the link when
+     * {@code paymentId} is null. The domain forwards the tenant and DIRECT book
+     * to the expert, which owns the state checks.
+     */
+    @PatchMapping("/settlements/{settlementId}/payment")
+    public ClaimDetailDtos.Settlement linkSettlementPayment(
+            @RequestHeader(value = "X-EIA-Tenant", required = false) String tenantHeader,
+            @RequestHeader(value = "X-EIA-Book", required = false) String book,
+            @PathVariable UUID claimId,
+            @PathVariable UUID settlementId,
+            @Valid @RequestBody ClaimCommands.SettlementPayment command) {
+        RequestGuard.requireDirectBook(book);
+        return service.linkSettlementPayment(RequestGuard.requireTenant(tenantHeader), claimId,
+                settlementId, command);
+    }
+
     // ------------------------------------------------------------------ recoveries
     @GetMapping("/recoveries")
     public List<ClaimDetailDtos.Recovery> recoveries(

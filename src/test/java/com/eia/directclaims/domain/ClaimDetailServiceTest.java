@@ -556,6 +556,29 @@ class ClaimDetailServiceTest {
     }
 
     @Test
+    void settlementPaymentDelegatesToTheExpert() {
+        ClaimCommands.SettlementPayment command =
+                new ClaimCommands.SettlementPayment(DomainFixtures.PAYMENT_ID);
+        ClaimDetailDtos.Settlement settlement = DomainFixtures.paymentLinkedSettlement("AUTHORIZED");
+        when(client.linkSettlementPayment(TENANT, CLAIM_ID, DomainFixtures.SETTLEMENT_ID, command))
+                .thenReturn(settlement);
+
+        assertEquals(settlement, service.linkSettlementPayment(TENANT, CLAIM_ID,
+                DomainFixtures.SETTLEMENT_ID, command));
+    }
+
+    @Test
+    void settlementPaymentWithNullIdForwardsTheUnlink() {
+        ClaimCommands.SettlementPayment command = new ClaimCommands.SettlementPayment(null);
+        ClaimDetailDtos.Settlement settlement = DomainFixtures.settlement("AUTHORIZED");
+        when(client.linkSettlementPayment(TENANT, CLAIM_ID, DomainFixtures.SETTLEMENT_ID, command))
+                .thenReturn(settlement);
+
+        assertEquals(settlement, service.linkSettlementPayment(TENANT, CLAIM_ID,
+                DomainFixtures.SETTLEMENT_ID, command));
+    }
+
+    @Test
     void recoveryRequiresADateWhenReceived() {
         ClaimCommands.Recovery command = new ClaimCommands.Recovery("SUBROGATION",
                 new BigDecimal("1000"), "USD", "Acme", "RECEIVED", null, null);

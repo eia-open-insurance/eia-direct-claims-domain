@@ -23,6 +23,7 @@ import static com.eia.directclaims.domain.DomainFixtures.INJURY_ID;
 import static com.eia.directclaims.domain.DomainFixtures.LIEN_ID;
 import static com.eia.directclaims.domain.DomainFixtures.LITIGATION_ID;
 import static com.eia.directclaims.domain.DomainFixtures.NOTE_ID;
+import static com.eia.directclaims.domain.DomainFixtures.PAYMENT_ID;
 import static com.eia.directclaims.domain.DomainFixtures.RECOVERY_ID;
 import static com.eia.directclaims.domain.DomainFixtures.SETTLEMENT_ID;
 import static com.eia.directclaims.domain.DomainFixtures.TASK_ID;
@@ -35,6 +36,7 @@ import static com.eia.directclaims.domain.DomainFixtures.injury;
 import static com.eia.directclaims.domain.DomainFixtures.lien;
 import static com.eia.directclaims.domain.DomainFixtures.litigation;
 import static com.eia.directclaims.domain.DomainFixtures.note;
+import static com.eia.directclaims.domain.DomainFixtures.paymentLinkedSettlement;
 import static com.eia.directclaims.domain.DomainFixtures.postedAllocation;
 import static com.eia.directclaims.domain.DomainFixtures.recovery;
 import static com.eia.directclaims.domain.DomainFixtures.reserve;
@@ -609,6 +611,109 @@ class ClaimDetailControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("EXECUTED"));
+    }
+
+    @Test
+    void linksASettlementPayment() throws Exception {
+        when(service.linkSettlementPayment(eq(TENANT), eq(CLAIM_ID), eq(SETTLEMENT_ID),
+                any(ClaimCommands.SettlementPayment.class)))
+                .thenReturn(paymentLinkedSettlement("AUTHORIZED"));
+
+        mvc.perform(patch(BASE + "/settlements/" + SETTLEMENT_ID + "/payment")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"paymentId": "55555555-5555-7555-8555-555555555555"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("AUTHORIZED"))
+                .andExpect(jsonPath("$.paymentId").value(PAYMENT_ID.toString()))
+                .andExpect(jsonPath("$.paymentLinkedAt").value("2026-03-18T09:00:00Z"));
+    }
+
+    @Test
+    void clearsASettlementPaymentLink() throws Exception {
+        when(service.linkSettlementPayment(eq(TENANT), eq(CLAIM_ID), eq(SETTLEMENT_ID),
+                any(ClaimCommands.SettlementPayment.class)))
+                .thenReturn(settlement("AUTHORIZED"));
+
+        mvc.perform(patch(BASE + "/settlements/" + SETTLEMENT_ID + "/payment")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"paymentId\": null}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("AUTHORIZED"))
+                .andExpect(jsonPath("$.paymentId").isEmpty())
+                .andExpect(jsonPath("$.paymentLinkedAt").isEmpty());
+    }
+
+    @Test
+    void settlementPaymentRoutesKeepTheDirectBookWall() throws Exception {
+        mvc.perform(patch(BASE + "/settlements/" + SETTLEMENT_ID + "/payment")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", "ASSUMED")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"paymentId\": \"" + PAYMENT_ID + "\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void expertBadRequestOnSettlementPaymentIsPreservedAs400() throws Exception {
+        when(service.linkSettlementPayment(eq(TENANT), eq(CLAIM_ID), eq(SETTLEMENT_ID),
+                any(ClaimCommands.SettlementPayment.class)))
+                .thenThrow(expertProblem(400, "VALIDATION_ERROR",
+                        "paymentId is required"));
+
+        mvc.perform(patch(BASE + "/settlements/" + SETTLEMENT_ID + "/payment")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"paymentId\": \"" + PAYMENT_ID + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("paymentId is required"));
+    }
+
+    @Test
+    void expertNotFoundOnSettlementPaymentIsPreservedAs404() throws Exception {
+        when(service.linkSettlementPayment(eq(TENANT), eq(CLAIM_ID), eq(SETTLEMENT_ID),
+                any(ClaimCommands.SettlementPayment.class)))
+                .thenThrow(expertProblem(404, "NOT_FOUND",
+                        "Settlement not found: " + SETTLEMENT_ID));
+
+        mvc.perform(patch(BASE + "/settlements/" + SETTLEMENT_ID + "/payment")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"paymentId\": \"" + PAYMENT_ID + "\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("Settlement not found: " + SETTLEMENT_ID));
+    }
+
+    @Test
+    void expertConflictOnSettlementPaymentIsPreservedAs409() throws Exception {
+        when(service.linkSettlementPayment(eq(TENANT), eq(CLAIM_ID), eq(SETTLEMENT_ID),
+                any(ClaimCommands.SettlementPayment.class)))
+                .thenThrow(expertProblem(409, "CONFLICT",
+                        "Settlement " + SETTLEMENT_ID + " is already linked to a payment"));
+
+        mvc.perform(patch(BASE + "/settlements/" + SETTLEMENT_ID + "/payment")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"paymentId\": \"" + PAYMENT_ID + "\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.message").value(
+                        "Settlement " + SETTLEMENT_ID + " is already linked to a payment"));
     }
 
     // ------------------------------------------------------------------ recoveries

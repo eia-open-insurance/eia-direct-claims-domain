@@ -19,6 +19,7 @@ final class DomainFixtures {
     static final UUID COVERAGE_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d34");
     static final UUID LITIGATION_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d35");
     static final UUID SETTLEMENT_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d36");
+    static final UUID PAYMENT_ID = UUID.fromString("55555555-5555-7555-8555-555555555555");
     static final UUID RECOVERY_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d37");
     static final UUID LIEN_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d38");
     static final UUID TASK_ID = UUID.fromString("0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d39");
@@ -80,7 +81,15 @@ final class DomainFixtures {
     static ClaimDetailDtos.Settlement settlement(String status) {
         return new ClaimDetailDtos.Settlement(SETTLEMENT_ID, TENANT, CLAIM_ID, "SET-2026-0000001",
                 new BigDecimal("60000.0000"), "USD", "LUMP_SUM", "FULL", "Claims Committee",
-                "Wire to claimant trust account", OTHER_ID, status, OTHER_ID, NOW, NOW, 1, NOW, NOW);
+                "Wire to claimant trust account", OTHER_ID, status, OTHER_ID, NOW, NOW, null, null, 1,
+                NOW, NOW);
+    }
+
+    static ClaimDetailDtos.Settlement paymentLinkedSettlement(String status) {
+        return new ClaimDetailDtos.Settlement(SETTLEMENT_ID, TENANT, CLAIM_ID, "SET-2026-0000001",
+                new BigDecimal("60000.0000"), "USD", "LUMP_SUM", "FULL", "Claims Committee",
+                "Wire to claimant trust account", OTHER_ID, status, OTHER_ID, NOW, NOW, PAYMENT_ID,
+                NOW, 1, NOW, NOW);
     }
 
     static ClaimDetailDtos.Recovery recovery(String status) {

@@ -23,7 +23,9 @@ import static com.eia.directclaims.domain.DomainFixtures.CLAIMANT_ID;
 import static com.eia.directclaims.domain.DomainFixtures.CLAIM_ID;
 import static com.eia.directclaims.domain.DomainFixtures.LIMIT_ID;
 import static com.eia.directclaims.domain.DomainFixtures.NOTE_ID;
+import static com.eia.directclaims.domain.DomainFixtures.PAYMENT_ID;
 import static com.eia.directclaims.domain.DomainFixtures.POLICY_ID;
+import static com.eia.directclaims.domain.DomainFixtures.SETTLEMENT_ID;
 import static com.eia.directclaims.domain.DomainFixtures.TASK_ID;
 import static com.eia.directclaims.domain.DomainFixtures.TENANT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -45,6 +47,8 @@ class ClaimClientTest {
     private static final String ASSIGN_URL = EXPERT + "/internal/v1/claims/" + CLAIM_ID + "/assignment";
     private static final String ALLOCATION_URL =
             EXPERT + "/internal/v1/claims/" + CLAIM_ID + "/allocations";
+    private static final String SETTLEMENT_PAYMENT_URL = EXPERT + "/internal/v1/claims/" + CLAIM_ID
+            + "/settlements/" + SETTLEMENT_ID + "/payment";
 
     private static final String CLAIM_JSON = """
             {
@@ -105,6 +109,37 @@ class ClaimClientTest {
               "createdAt": "2026-03-18T09:00:00Z"
             }
             """;
+
+    private static final String SETTLEMENT_JSON = """
+            {
+              "id": "0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d36",
+              "tenantId": "11111111-1111-7111-8111-111111111111",
+              "claimId": "0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d21",
+              "settlementNumber": "SET-2026-0000001",
+              "amount": "60000.0000",
+              "currency": "USD",
+              "structure": "LUMP_SUM",
+              "releaseScope": "FULL",
+              "approvalAuthority": "Claims Committee",
+              "paymentInstructions": "Wire to claimant trust account",
+              "releaseDocumentId": "44444444-4444-7444-8444-444444444444",
+              "status": "AUTHORIZED",
+              "authorizedBy": "44444444-4444-7444-8444-444444444444",
+              "authorizedAt": "2026-03-18T09:00:00Z",
+              "executedAt": null,
+              "paymentId": "55555555-5555-7555-8555-555555555555",
+              "paymentLinkedAt": "2026-03-18T09:30:00Z",
+              "version": 2,
+              "createdAt": "2026-03-18T09:00:00Z",
+              "updatedAt": "2026-03-18T09:30:00Z"
+            }
+            """;
+
+    private static final String UNLINKED_SETTLEMENT_JSON = SETTLEMENT_JSON
+            .replace("\"paymentId\": \"55555555-5555-7555-8555-555555555555\"",
+                    "\"paymentId\": null")
+            .replace("\"paymentLinkedAt\": \"2026-03-18T09:30:00Z\"",
+                    "\"paymentLinkedAt\": null");
 
     private static final String ALLOCATION_JSON = """
             {
@@ -741,6 +776,111 @@ class ClaimClientTest {
 
         assertEquals(404, error.getStatusCode().value());
         assertTrue(error.getResponseBodyAsString().contains("Claim not found"));
+        server.verify();
+    }
+
+    // ------------------------------------------------------------------ settlement payments
+    @Test
+    void linkSettlementPaymentPatchesThePaymentIdAndParsesTheLinkage() {
+        server.expect(requestTo(SETTLEMENT_PAYMENT_URL))
+                .andExpect(method(HttpMethod.PATCH))
+                .andExpect(header("X-EIA-Tenant", TENANT.toString()))
+                .andExpect(header("X-EIA-Book", "DIRECT"))
+                .andExpect(content().json("""
+                        {"paymentId": "55555555-5555-7555-8555-555555555555"}
+                        """, JsonCompareMode.STRICT))
+                .andRespond(withSuccess(SETTLEMENT_JSON, MediaType.APPLICATION_JSON));
+
+        ClaimDetailDtos.Settlement settlement = client.linkSettlementPayment(TENANT, CLAIM_ID,
+                SETTLEMENT_ID, new ClaimCommands.SettlementPayment(PAYMENT_ID));
+
+        assertEquals(SETTLEMENT_ID, settlement.id());
+        assertEquals(CLAIM_ID, settlement.claimId());
+        assertEquals("AUTHORIZED", settlement.status());
+        assertEquals(PAYMENT_ID, settlement.paymentId());
+        assertEquals("2026-03-18T09:30:00Z", settlement.paymentLinkedAt().toString());
+        server.verify();
+    }
+
+    @Test
+    void linkSettlementPaymentForwardsANullIdToClearTheLink() {
+        server.expect(requestTo(SETTLEMENT_PAYMENT_URL))
+                .andExpect(method(HttpMethod.PATCH))
+                .andExpect(header("X-EIA-Tenant", TENANT.toString()))
+                .andExpect(header("X-EIA-Book", "DIRECT"))
+                .andExpect(content().json("""
+                        {"paymentId": null}
+                        """, JsonCompareMode.STRICT))
+                .andRespond(withSuccess(UNLINKED_SETTLEMENT_JSON, MediaType.APPLICATION_JSON));
+
+        ClaimDetailDtos.Settlement settlement = client.linkSettlementPayment(TENANT, CLAIM_ID,
+                SETTLEMENT_ID, new ClaimCommands.SettlementPayment(null));
+
+        assertEquals(SETTLEMENT_ID, settlement.id());
+        assertNull(settlement.paymentId());
+        assertNull(settlement.paymentLinkedAt());
+        server.verify();
+    }
+
+    @Test
+    void propagatesAnExpertBadRequestForASettlementPayment() {
+        server.expect(requestTo(SETTLEMENT_PAYMENT_URL))
+                .andExpect(method(HttpMethod.PATCH))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST)
+                        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                        .body("""
+                                {"title": "Validation failed", "status": 400,
+                                 "detail": "paymentId is required", "code": "VALIDATION_ERROR"}
+                                """));
+
+        RestClientResponseException error = assertThrows(RestClientResponseException.class,
+                () -> client.linkSettlementPayment(TENANT, CLAIM_ID, SETTLEMENT_ID,
+                        new ClaimCommands.SettlementPayment(PAYMENT_ID)));
+
+        assertEquals(400, error.getStatusCode().value());
+        assertTrue(error.getResponseBodyAsString().contains("paymentId is required"));
+        server.verify();
+    }
+
+    @Test
+    void propagatesAnExpertNotFoundProblemForASettlementPayment() {
+        server.expect(requestTo(SETTLEMENT_PAYMENT_URL))
+                .andExpect(method(HttpMethod.PATCH))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND)
+                        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                        .body("""
+                                {"title": "Not found", "status": 404,
+                                 "detail": "Settlement not found", "code": "NOT_FOUND"}
+                                """));
+
+        RestClientResponseException error = assertThrows(RestClientResponseException.class,
+                () -> client.linkSettlementPayment(TENANT, CLAIM_ID, SETTLEMENT_ID,
+                        new ClaimCommands.SettlementPayment(PAYMENT_ID)));
+
+        assertEquals(404, error.getStatusCode().value());
+        assertTrue(error.getResponseBodyAsString().contains("Settlement not found"));
+        server.verify();
+    }
+
+    @Test
+    void propagatesAnExpertConflictForASettlementPayment() {
+        server.expect(requestTo(SETTLEMENT_PAYMENT_URL))
+                .andExpect(method(HttpMethod.PATCH))
+                .andRespond(withStatus(HttpStatus.CONFLICT)
+                        .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                        .body("""
+                                {"title": "Conflict", "status": 409,
+                                 "detail": "Settlement is already linked to a payment",
+                                 "code": "CONFLICT"}
+                                """));
+
+        RestClientResponseException error = assertThrows(RestClientResponseException.class,
+                () -> client.linkSettlementPayment(TENANT, CLAIM_ID, SETTLEMENT_ID,
+                        new ClaimCommands.SettlementPayment(PAYMENT_ID)));
+
+        assertEquals(409, error.getStatusCode().value());
+        assertTrue(error.getResponseBodyAsString()
+                .contains("Settlement is already linked to a payment"));
         server.verify();
     }
 }

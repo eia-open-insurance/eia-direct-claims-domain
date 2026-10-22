@@ -120,6 +120,14 @@ public final class ClaimCommands {
     ) {
     }
 
+    /**
+     * Links the payment that funds a settlement, or clears the link when
+     * {@code paymentId} is null. The expert owns the settlement state checks and
+     * stamps {@code paymentLinkedAt}.
+     */
+    public record SettlementPayment(UUID paymentId) {
+    }
+
     public record Recovery(
             String recoveryType,
             BigDecimal amount,
