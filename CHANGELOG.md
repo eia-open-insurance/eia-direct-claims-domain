@@ -71,3 +71,9 @@ The format is based on Keep a Changelog and the project uses Semantic Versioning
   and its 400/404/409 problem+json responses keep their status and detail.
   MockRestServiceServer tests cover the controller, client route/headers/body, DTO parsing,
   link, and unlink.
+- Litigation damages: the litigation command and public projection add optional
+  `damagesSought` and `damagesCurrency`. `POST|PATCH /api/v1/claims/{claimId}/litigation`
+  forwards both to the expert; a supplied amount must be zero or greater and a supplied
+  currency must be a three-letter ISO code. The projection serializes `damagesSought` as a
+  decimal string; MockRestServiceServer, service, and MockMvc tests cover the forwarded
+  payload, response mapping, and validation.

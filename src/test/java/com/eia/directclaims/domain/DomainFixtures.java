@@ -74,8 +74,8 @@ final class DomainFixtures {
 
     static ClaimDetailDtos.Litigation litigation() {
         return new ClaimDetailDtos.Litigation(LITIGATION_ID, TENANT, CLAIM_ID, "DEFENSE", "US-OH",
-                OTHER_ID, LocalDate.of(2026, 2, 1), LocalDate.of(2026, 9, 1), "ACTIVE", "CV-1", 1,
-                NOW, NOW);
+                OTHER_ID, LocalDate.of(2026, 2, 1), LocalDate.of(2026, 9, 1), "ACTIVE", "CV-1",
+                new BigDecimal("2500000.0000"), "USD", 1, NOW, NOW);
     }
 
     static ClaimDetailDtos.Settlement settlement(String status) {

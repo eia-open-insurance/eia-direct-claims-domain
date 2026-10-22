@@ -22,6 +22,7 @@ import static com.eia.directclaims.domain.DomainFixtures.ALLOCATION_ID;
 import static com.eia.directclaims.domain.DomainFixtures.CLAIMANT_ID;
 import static com.eia.directclaims.domain.DomainFixtures.CLAIM_ID;
 import static com.eia.directclaims.domain.DomainFixtures.LIMIT_ID;
+import static com.eia.directclaims.domain.DomainFixtures.LITIGATION_ID;
 import static com.eia.directclaims.domain.DomainFixtures.NOTE_ID;
 import static com.eia.directclaims.domain.DomainFixtures.PAYMENT_ID;
 import static com.eia.directclaims.domain.DomainFixtures.POLICY_ID;
@@ -47,6 +48,8 @@ class ClaimClientTest {
     private static final String ASSIGN_URL = EXPERT + "/internal/v1/claims/" + CLAIM_ID + "/assignment";
     private static final String ALLOCATION_URL =
             EXPERT + "/internal/v1/claims/" + CLAIM_ID + "/allocations";
+    private static final String LITIGATION_URL =
+            EXPERT + "/internal/v1/claims/" + CLAIM_ID + "/litigation";
     private static final String SETTLEMENT_PAYMENT_URL = EXPERT + "/internal/v1/claims/" + CLAIM_ID
             + "/settlements/" + SETTLEMENT_ID + "/payment";
 
@@ -75,6 +78,26 @@ class ClaimClientTest {
               "version": 4,
               "createdAt": "2026-03-18T09:00:00Z",
               "updatedAt": "2026-03-18T10:00:00Z"
+            }
+            """;
+
+    private static final String LITIGATION_JSON = """
+            {
+              "id": "0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d35",
+              "tenantId": "11111111-1111-7111-8111-111111111111",
+              "claimId": "0192f3a4-2b7e-7d1f-a9c4-3e8b5f0c9d21",
+              "matterType": "DEFENSE",
+              "jurisdiction": "US-OH",
+              "counselPartyId": "44444444-4444-7444-8444-444444444444",
+              "filingDate": "2026-02-01",
+              "trialDate": "2026-09-01",
+              "status": "ACTIVE",
+              "caseNumber": "CV-1",
+              "damagesSought": "2500000.0000",
+              "damagesCurrency": "USD",
+              "version": 1,
+              "createdAt": "2026-03-18T09:00:00Z",
+              "updatedAt": "2026-03-18T09:00:00Z"
             }
             """;
 
@@ -776,6 +799,90 @@ class ClaimClientTest {
 
         assertEquals(404, error.getStatusCode().value());
         assertTrue(error.getResponseBodyAsString().contains("Claim not found"));
+        server.verify();
+    }
+
+    // ------------------------------------------------------------------ litigation
+    @Test
+    void findLitigationParsesTheDamages() {
+        server.expect(requestTo(LITIGATION_URL + "?tenantId=" + TENANT))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[" + LITIGATION_JSON + "]", MediaType.APPLICATION_JSON));
+
+        List<ClaimDetailDtos.Litigation> matters = client.findLitigation(TENANT, CLAIM_ID);
+
+        assertEquals(1, matters.size());
+        ClaimDetailDtos.Litigation matter = matters.getFirst();
+        assertEquals(LITIGATION_ID, matter.id());
+        assertEquals("DEFENSE", matter.matterType());
+        assertEquals(new BigDecimal("2500000.0000"), matter.damagesSought());
+        assertEquals("USD", matter.damagesCurrency());
+        server.verify();
+    }
+
+    @Test
+    void addLitigationForwardsTheDamages() {
+        server.expect(requestTo(LITIGATION_URL))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("X-EIA-Tenant", TENANT.toString()))
+                .andExpect(header("X-EIA-Book", "DIRECT"))
+                .andExpect(content().json("""
+                        {
+                          "matterType": "DEFENSE",
+                          "jurisdiction": "US-OH",
+                          "counselPartyId": "44444444-4444-7444-8444-444444444444",
+                          "filingDate": "2026-02-01",
+                          "trialDate": "2026-09-01",
+                          "status": "ACTIVE",
+                          "caseNumber": "CV-1",
+                          "damagesSought": 2500000.0000,
+                          "damagesCurrency": "USD",
+                          "expectedVersion": null
+                        }
+                        """, JsonCompareMode.STRICT))
+                .andRespond(withStatus(HttpStatus.CREATED)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(LITIGATION_JSON));
+
+        ClaimDetailDtos.Litigation matter = client.addLitigation(TENANT, CLAIM_ID,
+                new ClaimCommands.Litigation("DEFENSE", "US-OH", DomainFixtures.OTHER_ID,
+                        LocalDate.of(2026, 2, 1), LocalDate.of(2026, 9, 1), "ACTIVE", "CV-1",
+                        new BigDecimal("2500000.0000"), "USD", null));
+
+        assertEquals(LITIGATION_ID, matter.id());
+        assertEquals(new BigDecimal("2500000.0000"), matter.damagesSought());
+        assertEquals("USD", matter.damagesCurrency());
+        server.verify();
+    }
+
+    @Test
+    void updateLitigationForwardsTheDamages() {
+        server.expect(requestTo(LITIGATION_URL + "/" + LITIGATION_ID))
+                .andExpect(method(HttpMethod.PATCH))
+                .andExpect(header("X-EIA-Tenant", TENANT.toString()))
+                .andExpect(header("X-EIA-Book", "DIRECT"))
+                .andExpect(content().json("""
+                        {
+                          "matterType": null,
+                          "jurisdiction": null,
+                          "counselPartyId": null,
+                          "filingDate": null,
+                          "trialDate": null,
+                          "status": null,
+                          "caseNumber": null,
+                          "damagesSought": 2750000.0000,
+                          "damagesCurrency": "USD",
+                          "expectedVersion": 1
+                        }
+                        """, JsonCompareMode.STRICT))
+                .andRespond(withSuccess(LITIGATION_JSON, MediaType.APPLICATION_JSON));
+
+        ClaimDetailDtos.Litigation matter = client.updateLitigation(TENANT, CLAIM_ID, LITIGATION_ID,
+                new ClaimCommands.Litigation(null, null, null, null, null, null, null,
+                        new BigDecimal("2750000.0000"), "USD", 1));
+
+        assertEquals(LITIGATION_ID, matter.id());
+        assertEquals("USD", matter.damagesCurrency());
         server.verify();
     }
 

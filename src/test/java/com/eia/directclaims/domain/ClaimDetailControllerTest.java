@@ -1,6 +1,7 @@
 package com.eia.directclaims.domain;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.http.HttpHeaders;
@@ -42,9 +43,11 @@ import static com.eia.directclaims.domain.DomainFixtures.recovery;
 import static com.eia.directclaims.domain.DomainFixtures.reserve;
 import static com.eia.directclaims.domain.DomainFixtures.settlement;
 import static com.eia.directclaims.domain.DomainFixtures.task;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -504,7 +507,9 @@ class ClaimDetailControllerTest {
 
         mvc.perform(get(BASE + "/litigation").header("X-EIA-Tenant", TENANT).header("X-EIA-Book", DIRECT))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].matterType").value("DEFENSE"));
+                .andExpect(jsonPath("$[0].matterType").value("DEFENSE"))
+                .andExpect(jsonPath("$[0].damagesSought").value("2500000.0000"))
+                .andExpect(jsonPath("$[0].damagesCurrency").value("USD"));
     }
 
     @Test
@@ -523,10 +528,45 @@ class ClaimDetailControllerTest {
                                   "counselPartyId": "44444444-4444-7444-8444-444444444444",
                                   "filingDate": "2026-02-01",
                                   "trialDate": "2026-09-01",
-                                  "status": "ACTIVE"
+                                  "status": "ACTIVE",
+                                  "damagesSought": "2500000.0000",
+                                  "damagesCurrency": "USD"
                                 }
                                 """))
-                .andExpect(status().isCreated());
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.damagesSought").value("2500000.0000"))
+                .andExpect(jsonPath("$.damagesCurrency").value("USD"));
+
+        ArgumentCaptor<ClaimCommands.Litigation> captor =
+                ArgumentCaptor.forClass(ClaimCommands.Litigation.class);
+        verify(service).addLitigation(eq(TENANT), eq(CLAIM_ID), captor.capture());
+        assertEquals(new BigDecimal("2500000.0000"), captor.getValue().damagesSought());
+        assertEquals("USD", captor.getValue().damagesCurrency());
+    }
+
+    @Test
+    void rejectsNegativeLitigationDamages() throws Exception {
+        mvc.perform(post(BASE + "/litigation")
+                        .header("X-EIA-Tenant", TENANT)
+                        .header("X-EIA-Book", DIRECT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "matterType": "DEFENSE",
+                                  "jurisdiction": "US-OH",
+                                  "counselPartyId": "44444444-4444-7444-8444-444444444444",
+                                  "filingDate": "2026-02-01",
+                                  "status": "ACTIVE",
+                                  "damagesSought": "-1.00",
+                                  "damagesCurrency": "USD"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("Request validation failed"))
+                .andExpect(jsonPath("$.details[0].field").value("damagesSought"));
+
+        verifyNoInteractions(service);
     }
 
     @Test
@@ -538,8 +578,23 @@ class ClaimDetailControllerTest {
                         .header("X-EIA-Tenant", TENANT)
                         .header("X-EIA-Book", DIRECT)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"status\": \"STAYED\", \"expectedVersion\": 1}"))
-                .andExpect(status().isOk());
+                        .content("""
+                                {
+                                  "status": "STAYED",
+                                  "damagesSought": "2750000.0000",
+                                  "damagesCurrency": "USD",
+                                  "expectedVersion": 1
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.damagesSought").value("2500000.0000"));
+
+        ArgumentCaptor<ClaimCommands.Litigation> captor =
+                ArgumentCaptor.forClass(ClaimCommands.Litigation.class);
+        verify(service).updateLitigation(eq(TENANT), eq(CLAIM_ID), eq(LITIGATION_ID),
+                captor.capture());
+        assertEquals(new BigDecimal("2750000.0000"), captor.getValue().damagesSought());
+        assertEquals("USD", captor.getValue().damagesCurrency());
     }
 
     // ------------------------------------------------------------------ settlements

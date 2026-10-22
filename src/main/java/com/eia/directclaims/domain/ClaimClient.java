@@ -265,6 +265,11 @@ public class ClaimClient {
                 });
     }
 
+    /**
+     * Records a litigation matter. The optional {@code damagesSought} and
+     * {@code damagesCurrency} are forwarded with the rest of the command; the
+     * expert owns their validation and persistence.
+     */
     public ClaimDetailDtos.Litigation addLitigation(UUID tenantId, UUID claimId,
                                                     ClaimCommands.Litigation command) {
         return client.post()
@@ -275,6 +280,11 @@ public class ClaimClient {
                 .body(ClaimDetailDtos.Litigation.class);
     }
 
+    /**
+     * Updates a litigation matter at the observed version. A supplied damages
+     * amount and currency are forwarded unchanged; an omitted field leaves the
+     * expert's stored value untouched.
+     */
     public ClaimDetailDtos.Litigation updateLitigation(UUID tenantId, UUID claimId, UUID litigationId,
                                                        ClaimCommands.Litigation command) {
         return client.patch()

@@ -500,7 +500,8 @@ class ClaimDetailServiceTest {
     @Test
     void litigationRejectsATrialBeforeFiling() {
         ClaimCommands.Litigation command = new ClaimCommands.Litigation("DEFENSE", "US-OH", OTHER_ID,
-                LocalDate.of(2026, 2, 1), LocalDate.of(2026, 1, 1), "ACTIVE", null, null);
+                LocalDate.of(2026, 2, 1), LocalDate.of(2026, 1, 1), "ACTIVE", null,
+                null, null, null);
 
         DomainValidationException error = assertThrows(DomainValidationException.class,
                 () -> service.addLitigation(TENANT, CLAIM_ID, command));
@@ -513,20 +514,69 @@ class ClaimDetailServiceTest {
     void litigationRequiresCounselAndJurisdiction() {
         assertThrows(DomainValidationException.class,
                 () -> service.addLitigation(TENANT, CLAIM_ID, new ClaimCommands.Litigation("DEFENSE",
-                        "US-OH", null, LocalDate.of(2026, 2, 1), null, "ACTIVE", null, null)));
+                        "US-OH", null, LocalDate.of(2026, 2, 1), null, "ACTIVE", null,
+                        null, null, null)));
         assertThrows(DomainValidationException.class,
                 () -> service.addLitigation(TENANT, CLAIM_ID, new ClaimCommands.Litigation("DEFENSE",
-                        " ", OTHER_ID, LocalDate.of(2026, 2, 1), null, "ACTIVE", null, null)));
+                        " ", OTHER_ID, LocalDate.of(2026, 2, 1), null, "ACTIVE", null,
+                        null, null, null)));
     }
 
     @Test
     void litigationDelegatesAValidMatter() {
         ClaimCommands.Litigation command = new ClaimCommands.Litigation("DEFENSE", "US-OH", OTHER_ID,
-                LocalDate.of(2026, 2, 1), LocalDate.of(2026, 9, 1), "ACTIVE", "CV-1", null);
+                LocalDate.of(2026, 2, 1), LocalDate.of(2026, 9, 1), "ACTIVE", "CV-1",
+                null, null, null);
         ClaimDetailDtos.Litigation matter = DomainFixtures.litigation();
         when(client.addLitigation(TENANT, CLAIM_ID, command)).thenReturn(matter);
 
         assertEquals(matter, service.addLitigation(TENANT, CLAIM_ID, command));
+    }
+
+    @Test
+    void litigationForwardsTheDamagesToTheExpert() {
+        ClaimCommands.Litigation command = new ClaimCommands.Litigation("DEFENSE", "US-OH", OTHER_ID,
+                LocalDate.of(2026, 2, 1), null, "ACTIVE", "CV-1",
+                new BigDecimal("2500000.0000"), "USD", null);
+        ClaimDetailDtos.Litigation matter = DomainFixtures.litigation();
+        when(client.addLitigation(TENANT, CLAIM_ID, command)).thenReturn(matter);
+
+        assertEquals(matter, service.addLitigation(TENANT, CLAIM_ID, command));
+
+        ArgumentCaptor<ClaimCommands.Litigation> captor =
+                ArgumentCaptor.forClass(ClaimCommands.Litigation.class);
+        verify(client).addLitigation(eq(TENANT), eq(CLAIM_ID), captor.capture());
+        assertEquals(new BigDecimal("2500000.0000"), captor.getValue().damagesSought());
+        assertEquals("USD", captor.getValue().damagesCurrency());
+    }
+
+    @Test
+    void litigationUpdateForwardsTheDamagesToTheExpert() {
+        ClaimCommands.Litigation command = new ClaimCommands.Litigation(null, null, null, null,
+                null, null, null, new BigDecimal("2750000.0000"), "USD", 1);
+        ClaimDetailDtos.Litigation matter = DomainFixtures.litigation();
+        when(client.updateLitigation(TENANT, CLAIM_ID, DomainFixtures.LITIGATION_ID, command))
+                .thenReturn(matter);
+
+        assertEquals(matter, service.updateLitigation(TENANT, CLAIM_ID,
+                DomainFixtures.LITIGATION_ID, command));
+    }
+
+    @Test
+    void litigationRejectsNegativeDamagesAndABlankCurrency() {
+        DomainValidationException negative = assertThrows(DomainValidationException.class,
+                () -> service.addLitigation(TENANT, CLAIM_ID, new ClaimCommands.Litigation(
+                        "DEFENSE", "US-OH", OTHER_ID, LocalDate.of(2026, 2, 1), null, "ACTIVE",
+                        null, new BigDecimal("-1.00"), "USD", null)));
+        assertEquals("damagesSought must be zero or greater", negative.getMessage());
+
+        DomainValidationException blankCurrency = assertThrows(DomainValidationException.class,
+                () -> service.addLitigation(TENANT, CLAIM_ID, new ClaimCommands.Litigation(
+                        "DEFENSE", "US-OH", OTHER_ID, LocalDate.of(2026, 2, 1), null, "ACTIVE",
+                        null, new BigDecimal("1000.00"), " ", null)));
+        assertEquals("damagesCurrency is required", blankCurrency.getMessage());
+
+        verifyNoInteractions(client);
     }
 
     @Test

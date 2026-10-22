@@ -118,6 +118,12 @@ Settlement projections expose `paymentId` and `paymentLinkedAt`; the expert rema
 authoritative for which settlement states may be linked and for duplicate-payment checks, and
 its 400/404/409 problem+json responses keep their status and detail.
 
+`POST|PATCH /api/v1/claims/{claimId}/litigation` accepts optional `damagesSought` and
+`damagesCurrency` with the matter fields. A supplied amount must be zero or greater and a
+supplied currency must be a three-letter ISO code; both are forwarded to the expert unchanged,
+and on an update an omitted field leaves the expert's stored value untouched. Litigation
+projections expose `damagesSought` as a decimal string and `damagesCurrency`.
+
 ## Verification
 
 - `.\gradlew build` - domain unit and controller tests.

@@ -145,6 +145,11 @@ public final class ClaimDetailDtos {
     ) {
     }
 
+    /**
+     * A litigation matter. {@code damagesSought} is the amount the claimant
+     * seeks, serialized as a decimal string, and {@code damagesCurrency} is its
+     * three-letter ISO currency code. Both are optional.
+     */
     public record Litigation(
             UUID id,
             UUID tenantId,
@@ -156,6 +161,8 @@ public final class ClaimDetailDtos {
             LocalDate trialDate,
             String status,
             String caseNumber,
+            @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal damagesSought,
+            String damagesCurrency,
             int version,
             Instant createdAt,
             Instant updatedAt

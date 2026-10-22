@@ -309,6 +309,7 @@ public class ClaimDetailService {
         requireId(command.counselPartyId(), "counselPartyId");
         requireDate(command.filingDate(), "filingDate");
         requireText(command.status(), "status");
+        validateDamages(command.damagesSought(), command.damagesCurrency());
         if (command.trialDate() != null && command.trialDate().isBefore(command.filingDate())) {
             throw new DomainValidationException("trialDate cannot be before filingDate");
         }
@@ -318,7 +319,17 @@ public class ClaimDetailService {
     public ClaimDetailDtos.Litigation updateLitigation(UUID tenantId, UUID claimId, UUID litigationId,
                                                        ClaimCommands.Litigation command) {
         requireExpectedVersion(command.expectedVersion());
+        validateDamages(command.damagesSought(), command.damagesCurrency());
         return client.updateLitigation(tenantId, claimId, litigationId, command);
+    }
+
+    private static void validateDamages(BigDecimal damagesSought, String damagesCurrency) {
+        if (damagesSought != null) {
+            nonNegative(damagesSought, "damagesSought");
+        }
+        if (damagesCurrency != null) {
+            requireText(damagesCurrency, "damagesCurrency");
+        }
     }
 
     // ------------------------------------------------------------------ settlements

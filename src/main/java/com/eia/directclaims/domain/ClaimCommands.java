@@ -1,7 +1,9 @@
 package com.eia.directclaims.domain;
 
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
@@ -85,6 +87,13 @@ public final class ClaimCommands {
     ) {
     }
 
+    /**
+     * Command to record or update a litigation matter. {@code damagesSought} is
+     * the amount the claimant seeks and {@code damagesCurrency} is its optional
+     * three-letter ISO currency code; both are optional and are forwarded to the
+     * expert unchanged. On an update an omitted field leaves the expert's stored
+     * value untouched.
+     */
     public record Litigation(
             String matterType,
             String jurisdiction,
@@ -93,6 +102,14 @@ public final class ClaimCommands {
             LocalDate trialDate,
             String status,
             String caseNumber,
+
+            @DecimalMin(value = "0.00", message = "damagesSought must be greater than or equal to 0")
+            BigDecimal damagesSought,
+
+            @Pattern(regexp = "[A-Z]{3}",
+                    message = "damagesCurrency must be a three-letter ISO currency code")
+            String damagesCurrency,
+
             Integer expectedVersion
     ) {
     }
